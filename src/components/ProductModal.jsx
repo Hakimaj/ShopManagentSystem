@@ -1,21 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useShop } from '../context/ShopContext';
-import { X, Save, ImagePlus, Check, Upload, Camera, Link as LinkIcon, Trash2 } from 'lucide-react';
+import { uploadsApi } from '../services/uploadsApi';
+import { X, Save, ImagePlus, Check, Upload, Camera, Link as LinkIcon, Trash2, AlertCircle, ChevronDown, Plus } from 'lucide-react';
 
 export const ProductModal = ({ isOpen, onClose, product }) => {
-  const { addProduct, updateProduct, customCategories, products } = useShop();
-  const allCategories = ['Laundry & Cleaning', 'Personal Care', 'Hair Care', 'Cleaning Tools', 'General', ...new Set([...products.map((p) => p.category), ...(customCategories || [])])];
-  const uniqueCategories = [...new Set(allCategories)];
+  const { addProduct, updateProduct, customCategories, addCategory, deleteCategory } = useShop();
 
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState('');
-
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [showImageSourceMenu, setShowImageSourceMenu] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlInput, setUrlInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  const dropdownRef = useRef(null);
 
   const [formData, setFormData] = useState({
     sku: '',
@@ -28,7 +30,23 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
     imageUrl: ''
   });
 
+  // Close dropdown on outside click
   useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsCategoryDropdownOpen(false);
+      }
+    };
+    if (isCategoryDropdownOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isCategoryDropdownOpen]);
+
+  useEffect(() => {
+    setFormError('');
     if (product) {
       setFormData({
         sku: product.sku || '',
@@ -44,7 +62,7 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
       setFormData({
         sku: `CLN-${Math.floor(100 + Math.random() * 900)}`,
         name: '',
-        category: 'Laundry & Cleaning',
+        category: customCategories?.[0] || 'Laundry & Cleaning',
         costPrice: '',
         sellingPrice: '',
         currentStock: '15',
@@ -52,7 +70,7 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
         imageUrl: ''
       });
     }
-  }, [product, isOpen]);
+  }, [product, isOpen, customCategories]);
 
   if (!isOpen) return null;
 
@@ -65,24 +83,31 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
     }
   };
 
-  const handleSaveCategory = () => {
+  const handleSaveCategory = async () => {
     if (newCategoryInput.trim()) {
-      addCategory(newCategoryInput.trim());
-      setFormData((prev) => ({ ...prev, category: newCategoryInput.trim() }));
-      setIsAddingCategory(false);
-      setNewCategoryInput('');
+      try {
+        await addCategory(newCategoryInput.trim());
+        setFormData((prev) => ({ ...prev, category: newCategoryInput.trim() }));
+        setIsAddingCategory(false);
+        setNewCategoryInput('');
+      } catch (err) {
+        setFormError(err.message || 'Failed to create category');
+      }
     }
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData((prev) => ({ ...prev, imageUrl: reader.result }));
+      try {
+        setFormError('');
+        const uploadRes = await uploadsApi.uploadImage(file);
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+        setFormData((prev) => ({ ...prev, imageUrl: `${BACKEND_URL}${uploadRes.url}` }));
         setShowImageSourceMenu(false);
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        setFormError(err.message || 'Failed to upload image');
+      }
     }
   };
 
@@ -101,17 +126,27 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
     setShowUrlInput(false);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.costPrice || !formData.sellingPrice) return;
-
-    if (product) {
-      updateProduct(product.id, formData);
-    } else {
-      addProduct(formData);
+    setFormError('');
+    if (!formData.name || !formData.costPrice || !formData.sellingPrice) {
+      setFormError('Please fill in all required fields.');
+      return;
     }
 
-    onClose();
+    setIsSubmitting(true);
+    try {
+      if (product) {
+        await updateProduct(product.id, formData);
+      } else {
+        await addProduct(formData);
+      }
+      onClose();
+    } catch (err) {
+      setFormError(err.message || 'Failed to save product.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -132,6 +167,26 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
+            {formError && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  background: 'var(--danger-bg)',
+                  color: 'var(--danger)',
+                  padding: '0.6rem 0.8rem',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  marginBottom: '1rem'
+                }}
+              >
+                <AlertCircle size={16} />
+                <span>{formError}</span>
+              </div>
+            )}
+
             {/* Hidden Inputs */}
             <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} />
             <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} style={{ display: 'none' }} onChange={handleFileChange} />
@@ -198,37 +253,187 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
                 />
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ position: 'relative' }} ref={dropdownRef}>
                 <label className="form-label">Category</label>
                 {isAddingCategory ? (
-                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <div style={{ display: 'flex', gap: '0.3rem' }}>
                     <input
                       type="text"
                       className="form-input"
+                      placeholder="New Category..."
                       value={newCategoryInput}
                       onChange={(e) => setNewCategoryInput(e.target.value)}
-                      placeholder="New Category..."
                       autoFocus
                     />
-                    <button type="button" className="btn-secondary" onClick={handleSaveCategory} style={{ padding: '0.4rem 0.6rem' }}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={handleSaveCategory}
+                      style={{ padding: '0 0.6rem' }}
+                    >
                       <Check size={16} />
                     </button>
-                    <button type="button" className="icon-btn" onClick={() => setIsAddingCategory(false)} style={{ background: 'transparent', border: 'none' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setIsAddingCategory(false)}
+                      style={{ padding: '0 0.6rem' }}
+                    >
                       <X size={16} />
                     </button>
                   </div>
                 ) : (
-                  <select
-                    name="category"
-                    className="form-input"
-                    value={formData.category}
-                    onChange={handleChange}
-                  >
-                    <option value="+ Add New Category" style={{ fontWeight: 'bold', color: 'var(--accent-primary)' }}>+ Add New Category</option>
-                    {uniqueCategories.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                  <div>
+                    {/* Custom Dropdown Trigger Button */}
+                    <div
+                      onClick={() => setIsCategoryDropdownOpen((prev) => !prev)}
+                      className="form-input"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        background: 'var(--bg-card)'
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {formData.category || 'Select Category'}
+                      </span>
+                      <ChevronDown
+                        size={16}
+                        style={{
+                          color: 'var(--text-muted)',
+                          transform: isCategoryDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease',
+                          flexShrink: 0
+                        }}
+                      />
+                    </div>
+
+                    {/* Custom Dropdown List */}
+                    {isCategoryDropdownOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          marginTop: '4px',
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '8px',
+                          boxShadow: 'var(--shadow-lg)',
+                          maxHeight: '220px',
+                          overflowY: 'auto',
+                          zIndex: 100,
+                          padding: '0.35rem 0'
+                        }}
+                      >
+                        {customCategories.map((cat) => (
+                          <div
+                            key={cat}
+                            onClick={() => {
+                              setFormData((prev) => ({ ...prev, category: cat }));
+                              setIsCategoryDropdownOpen(false);
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '0.55rem 0.85rem',
+                              cursor: 'pointer',
+                              fontSize: '0.86rem',
+                              fontWeight: formData.category === cat ? 700 : 500,
+                              color: formData.category === cat ? 'var(--accent-primary)' : 'var(--text-primary)',
+                              background: formData.category === cat ? 'var(--accent-glow)' : 'transparent',
+                              transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (formData.category !== cat) e.currentTarget.style.background = 'var(--bg-card-hover)';
+                            }}
+                            onMouseLeave={(e) => {
+                              if (formData.category !== cat) e.currentTarget.style.background = 'transparent';
+                            }}
+                          >
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '0.5rem' }}>
+                              {cat}
+                            </span>
+
+                            {/* Red X deletion button for this category */}
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`Delete category "${cat}"?`)) {
+                                  try {
+                                    await deleteCategory(cat);
+                                    if (formData.category === cat) {
+                                      const remaining = customCategories.filter((c) => c !== cat);
+                                      setFormData((prev) => ({ ...prev, category: remaining[0] || '' }));
+                                    }
+                                  } catch (err) {
+                                    alert(err.message || 'Failed to delete category');
+                                  }
+                                }
+                              }}
+                              title={`Delete category "${cat}"`}
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                border: 'none',
+                                color: 'var(--danger)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '22px',
+                                height: '22px',
+                                borderRadius: '4px',
+                                padding: 0,
+                                flexShrink: 0,
+                                transition: 'all 0.15s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'var(--danger)';
+                                e.currentTarget.style.color = '#fff';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)';
+                                e.currentTarget.style.color = 'var(--danger)';
+                              }}
+                            >
+                              <X size={13} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* Add New Category Action */}
+                        <div
+                          onClick={() => {
+                            setIsCategoryDropdownOpen(false);
+                            setIsAddingCategory(true);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            padding: '0.6rem 0.85rem',
+                            cursor: 'pointer',
+                            fontSize: '0.84rem',
+                            fontWeight: 700,
+                            color: 'var(--accent-primary)',
+                            borderTop: '1px solid var(--border-color)',
+                            marginTop: '0.25rem'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-card-hover)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <Plus size={14} />
+                          <span>Add New Category</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -239,7 +444,7 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
                 type="text"
                 name="name"
                 className="form-input"
-                placeholder="e.g. Abaya Shampoo 1.5L"
+                placeholder="e.g. Liquid Detergent 2L"
                 value={formData.name}
                 onChange={handleChange}
                 required
@@ -253,11 +458,12 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
                   type="number"
                   name="costPrice"
                   className="form-input"
-                  placeholder="0"
+                  placeholder="0.00"
                   value={formData.costPrice}
                   onChange={handleChange}
                   required
                   min="0"
+                  step="0.01"
                 />
               </div>
 
@@ -267,16 +473,17 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
                   type="number"
                   name="sellingPrice"
                   className="form-input"
-                  placeholder="0"
+                  placeholder="0.00"
                   value={formData.sellingPrice}
                   onChange={handleChange}
                   required
                   min="0"
+                  step="0.01"
                 />
               </div>
 
               <div className="form-group">
-                <label className="form-label">Stock Quantity</label>
+                <label className="form-label">Current Stock</label>
                 <input
                   type="number"
                   name="currentStock"
@@ -296,7 +503,7 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
                 name="description"
                 className="form-input"
                 rows="2"
-                placeholder="Item size, fragrance, or usage details..."
+                placeholder="Details, scent, packaging sizes..."
                 value={formData.description}
                 onChange={handleChange}
               />
@@ -304,12 +511,12 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
           </div>
 
           <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <button type="submit" className="btn-primary" disabled={isSubmitting}>
               <Save size={16} />
-              <span>{product ? 'Update Product' : 'Save Product'}</span>
+              <span>{isSubmitting ? 'Saving...' : product ? 'Update Item' : 'Add Item'}</span>
             </button>
           </div>
         </form>
