@@ -38,16 +38,22 @@ export const CartPanel = ({ onCloseMobile }) => {
   );
 
   const estimatedProfit = subtotal - totalCost;
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     setErrorMsg('');
-    if (cart.length === 0) return;
+    if (cart.length === 0 || isSubmitting) return;
 
-    const result = processCheckout(selectedPaymentMethod);
-    if (!result.success) {
-      setErrorMsg(result.error || 'Checkout failed');
-    } else {
-      if (onCloseMobile) onCloseMobile();
+    setIsSubmitting(true);
+    try {
+      const result = await processCheckout(selectedPaymentMethod);
+      if (!result.success) {
+        setErrorMsg(result.error || 'Checkout failed');
+      } else {
+        if (onCloseMobile) onCloseMobile();
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -96,10 +102,40 @@ export const CartPanel = ({ onCloseMobile }) => {
           cart.map(({ product, quantity, soldPrice }) => {
             const lineSubtotal = (soldPrice || 0) * quantity;
             return (
-              <div key={product.id} className="cart-item">
-                <div className="item-info">
-                  <div className="item-name">
-                    <span style={{ marginRight: '0.4rem' }}>{product.icon || '🧴'}</span>
+              <div key={product.id} className="cart-item" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {/* Product Thumbnail */}
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '6px',
+                    overflow: 'hidden',
+                    flexShrink: 0,
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  {product.imageUrl ? (
+                    <img
+                      src={product.imageUrl}
+                      alt={product.name}
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '4px',
+                        objectFit: 'cover'
+                      }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '1.2rem' }}>🧴</span>
+                  )}
+                </div>
+
+                <div className="item-info" style={{ flex: 1, minWidth: 0 }}>
+                  <div className="item-name" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {product.name}
                   </div>
                   <div className="item-price" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.4rem' }}>
@@ -222,9 +258,36 @@ export const CartPanel = ({ onCloseMobile }) => {
           </div>
 
           {/* Checkout Button */}
-          <button className="checkout-btn" onClick={handleCheckout}>
-            <CheckCircle2 size={20} />
-            <span>Complete Order ({subtotal} ETB)</span>
+          <button
+            className="checkout-btn"
+            onClick={handleCheckout}
+            disabled={isSubmitting}
+            style={{
+              opacity: isSubmitting ? 0.75 : 1,
+              cursor: isSubmitting ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {isSubmitting ? (
+              <>
+                <span
+                  style={{
+                    width: 18,
+                    height: 18,
+                    border: '2px solid rgba(255,255,255,0.4)',
+                    borderTopColor: '#fff',
+                    borderRadius: '50%',
+                    animation: 'spin 0.65s linear infinite',
+                    display: 'inline-block'
+                  }}
+                />
+                <span>Processing Order…</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 size={20} />
+                <span>Complete Order ({subtotal} ETB)</span>
+              </>
+            )}
           </button>
         </div>
       )}

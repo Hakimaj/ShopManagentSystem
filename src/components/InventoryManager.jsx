@@ -1,20 +1,27 @@
 import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
 import {
-  Package,
   Plus,
   Search,
   Edit2,
   AlertTriangle,
-  TrendingUp,
   CheckCircle,
-  RefreshCw,
-  Trash2
+  Trash2,
+  PackageX
 } from 'lucide-react';
 import { ProductModal } from './ProductModal';
+import { ErrorBanner } from './ErrorBanner';
 
 export const InventoryManager = () => {
-  const { products, updateProduct, customCategories, removeProduct } = useShop();
+  const {
+    products,
+    customCategories,
+    removeProduct,
+    adjustStock,
+    isLoading,
+    apiError,
+    loadData
+  } = useShop();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -22,8 +29,17 @@ export const InventoryManager = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [quickStockEditingId, setQuickStockEditingId] = useState(null);
   const [quickStockValue, setQuickStockValue] = useState('');
+  const [deletingId, setDeletingId] = useState(null);
 
-  const categories = ['All', ...new Set([...products.map((p) => p.category), ...(customCategories || [])])];
+  // Dynamic populated categories filter: only show categories that have products in them
+  const populatedCategories = [
+    'All',
+    ...new Set(
+      (customCategories || [])
+        .concat(products.map((p) => p.category))
+        .filter((cat) => cat && products.some((product) => product.category === cat))
+    )
+  ];
 
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
@@ -47,14 +63,30 @@ export const InventoryManager = () => {
     setIsProductModalOpen(true);
   };
 
-  const handleSaveQuickStock = (productId) => {
+  const handleSaveQuickStock = async (productId) => {
     const stockNum = parseInt(quickStockValue, 10);
     if (!isNaN(stockNum) && stockNum >= 0) {
-      updateProduct(productId, { currentStock: stockNum });
+      try {
+        await adjustStock(productId, stockNum);
+      } catch (err) {
+        alert(err.message || 'Failed to update stock');
+      }
     }
     setQuickStockEditingId(null);
   };
 
+  const handleDeleteProduct = async (product) => {
+    if (window.confirm(`Deactivate product "${product.name}"? This will remove it from active catalog while preserving sales history.`)) {
+      setDeletingId(product.id);
+      try {
+        await removeProduct(product.id);
+      } catch (err) {
+        alert(err.message || 'Failed to delete product');
+      } finally {
+        setDeletingId(null);
+      }
+    }
+  };
 
   return (
     <div className="view-container">
@@ -73,6 +105,8 @@ export const InventoryManager = () => {
         </button>
       </div>
 
+      {apiError && <ErrorBanner message={apiError} onRetry={loadData} loading={isLoading} />}
+
       {/* Table Card */}
       <div className="table-card">
         <div className="table-header">
@@ -88,9 +122,10 @@ export const InventoryManager = () => {
           </div>
 
           <div className="category-pills">
-            {categories.map((cat) => (
+            {populatedCategories.map((cat) => (
               <button
                 key={cat}
+                type="button"
                 className={`pill-btn ${selectedCategory === cat ? 'active' : ''}`}
                 onClick={() => setSelectedCategory(cat)}
                 style={{ fontSize: '0.78rem', padding: '0.35rem 0.8rem' }}
@@ -115,10 +150,37 @@ export const InventoryManager = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredProducts.length === 0 ? (
+            {isLoading && products.length === 0 ? (
+              // Loading skeleton state
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={`skeleton-${i}`}>
+                  <td><div className="skeleton skeleton-text" style={{ width: '80px' }} /></td>
+                  <td>
+                    <div className="skeleton skeleton-text" style={{ width: '150px', marginBottom: '4px' }} />
+                    <div className="skeleton skeleton-text" style={{ width: '100px', height: '0.65rem' }} />
+                  </td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '90px' }} /></td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '60px' }} /></td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '60px' }} /></td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '60px' }} /></td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '80px', height: '22px', borderRadius: '12px' }} /></td>
+                  <td style={{ textAlign: 'right' }}><div className="skeleton skeleton-text" style={{ width: '64px', marginLeft: 'auto' }} /></td>
+                </tr>
+              ))
+            ) : filteredProducts.length === 0 ? (
               <tr>
-                <td colSpan="8" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
-                  No inventory products match criteria.
+                <td colSpan="8">
+                  <div className="empty-state">
+                    <div className="empty-state-icon">
+                      <PackageX size={28} />
+                    </div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>No inventory products found</div>
+                    <div style={{ fontSize: '0.85rem' }}>
+                      {searchQuery || selectedCategory !== 'All'
+                        ? 'Try changing your search keywords or category filters.'
+                        : 'No products are currently in the catalog. Click "Add New Product" to create one.'}
+                    </div>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -127,9 +189,10 @@ export const InventoryManager = () => {
                 const isOutOfStock = product.currentStock <= 0;
                 const isLowStock = product.currentStock > 0 && product.currentStock <= 5;
                 const isEditingStock = quickStockEditingId === product.id;
+                const isDeleting = deletingId === product.id;
 
                 return (
-                  <tr key={product.id}>
+                  <tr key={product.id} style={{ opacity: isDeleting ? 0.4 : 1 }}>
                     <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>
                       {product.sku}
                     </td>
@@ -160,7 +223,7 @@ export const InventoryManager = () => {
                       {product.sellingPrice} ETB
                     </td>
                     <td style={{ fontWeight: 800, color: 'var(--success)' }}>
-                      +{profitPerUnit} ETB
+                      +{profitPerUnit.toFixed(2)} ETB
                     </td>
                     <td>
                       {isEditingStock ? (
@@ -218,18 +281,16 @@ export const InventoryManager = () => {
                           style={{ display: 'inline-flex', width: 32, height: 32 }}
                           onClick={() => handleOpenEditModal(product)}
                           title="Edit Product Details"
+                          disabled={isDeleting}
                         >
                           <Edit2 size={16} />
                         </button>
                         <button
                           className="icon-btn"
                           style={{ display: 'inline-flex', width: 32, height: 32, background: 'var(--danger)', color: '#fff' }}
-                          onClick={() => {
-                            if (window.confirm(`Delete product "${product.name}"? This action cannot be undone.`)) {
-                              removeProduct(product.id);
-                            }
-                          }}
-                          title="Delete Product"
+                          onClick={() => handleDeleteProduct(product)}
+                          title="Deactivate Product"
+                          disabled={isDeleting}
                         >
                           <Trash2 size={16} />
                         </button>

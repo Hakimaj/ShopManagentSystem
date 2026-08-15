@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useShop } from '../context/ShopContext';
+import { dashboardApi } from '../services/dashboardApi';
+import { ErrorBanner } from './ErrorBanner';
 import {
   DollarSign,
   TrendingUp,
@@ -11,16 +13,16 @@ import {
   Smartphone,
   Banknote,
   Eye,
-  Clock
+  Clock,
+  Inbox
 } from 'lucide-react';
 
 export const SalesDashboard = () => {
-  const { transactions } = useShop();
+  const { transactions, isLoading: shopLoading, loadData } = useShop();
 
-  // Revenue Time Period Filters: 'daily' | 'monthly' | 'all' | 'custom'
+  // Revenue Time Period Filters: 'daily' | 'monthly' | 'all' | 'custom' | 'half_year'
   const [timeFilter, setTimeFilter] = useState('all');
-  
-  // Custom Date Picker value (Format: YYYY-MM-DD). Default to today's date
+
   const getTodayFormatted = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -32,6 +34,9 @@ export const SalesDashboard = () => {
   const [customDate, setCustomDate] = useState(getTodayFormatted());
   const [selectedPaymentFilter, setSelectedPaymentFilter] = useState('All');
   const [selectedTxnDetail, setSelectedTxnDetail] = useState(null);
+  const [backendKpi, setBackendKpi] = useState(null);
+  const [isLoadingKpi, setIsLoadingKpi] = useState(false);
+  const [kpiError, setKpiError] = useState(null);
 
   // Helper date matching functions
   const isSameDay = (isoDateString, targetYmd) => {
@@ -81,14 +86,49 @@ export const SalesDashboard = () => {
     return txn.paymentMethod === selectedPaymentFilter;
   });
 
-  // Dynamically calculate metrics for the active Time Period filter
-  const periodRevenue = dateFilteredTransactions.reduce((sum, t) => sum + t.totalRevenue, 0);
-  const periodProfit = dateFilteredTransactions.reduce((sum, t) => sum + t.totalProfit, 0);
-  const periodOrdersCount = dateFilteredTransactions.length;
-  const periodItemsSold = dateFilteredTransactions.reduce(
-    (sum, t) => sum + t.items.reduce((iSum, item) => iSum + item.quantity, 0),
-    0
-  );
+  const fetchStats = React.useCallback(async () => {
+    setIsLoadingKpi(true);
+    setKpiError(null);
+    try {
+      const res = await dashboardApi.getSummary({
+        period: timeFilter,
+        custom_date: timeFilter === 'custom' ? customDate : undefined,
+        payment_method: selectedPaymentFilter !== 'All' ? selectedPaymentFilter : undefined
+      });
+      if (res?.kpi) {
+        setBackendKpi(res.kpi);
+      }
+    } catch (err) {
+      console.warn('Backend dashboard summary error:', err.message);
+      setKpiError(err.message || 'Failed to fetch summary metrics');
+    } finally {
+      setIsLoadingKpi(false);
+    }
+  }, [timeFilter, customDate, selectedPaymentFilter]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  // Dynamically calculate metrics with backend fallback
+  const periodRevenue = backendKpi
+    ? Number(backendKpi.filtered_revenue)
+    : dateFilteredTransactions.reduce((sum, t) => sum + t.totalRevenue, 0);
+
+  const periodProfit = backendKpi
+    ? Number(backendKpi.filtered_profit)
+    : dateFilteredTransactions.reduce((sum, t) => sum + t.totalProfit, 0);
+
+  const periodOrdersCount = backendKpi
+    ? backendKpi.orders_count
+    : dateFilteredTransactions.length;
+
+  const periodItemsSold = backendKpi
+    ? backendKpi.items_sold
+    : dateFilteredTransactions.reduce(
+        (sum, t) => sum + t.items.reduce((iSum, item) => iSum + item.quantity, 0),
+        0
+      );
 
   const getPaymentIcon = (method) => {
     switch (method) {
@@ -134,25 +174,35 @@ export const SalesDashboard = () => {
       {/* Header */}
       <div className="view-header">
         <div>
-          <h1 className="view-title">Sales & Revenue Dashboard</h1>
+          <h1 className="view-title">Sales Analytics &amp; Revenue</h1>
           <p className="view-subtitle">
-            Track daily, monthly, and custom date revenue with net profit calculations.
+            Authoritative breakdown of sales revenue, net profits, and transaction history.
           </p>
         </div>
       </div>
 
-      {/* ENHANCED REVENUE FILTERS CONTROL BAR */}
+      {kpiError && (
+        <ErrorBanner
+          message={`Dashboard notice: ${kpiError}`}
+          onRetry={() => { fetchStats(); loadData(); }}
+          loading={isLoadingKpi || shopLoading}
+        />
+      )}
+
+      {/* Time Period Filter Bar */}
       <div
         style={{
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '14px',
-          padding: '1rem 1.25rem',
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'center',
-          justify: 'space-between',
-          gap: '1rem'
+          justifyContent: 'space-between',
+          gap: '1rem',
+          background: 'var(--bg-card)',
+          padding: '0.85rem 1.25rem',
+          borderRadius: '16px',
+          border: '1px solid var(--border-color)',
+          boxShadow: 'var(--shadow-sm)',
+          marginBottom: '1.5rem'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -239,50 +289,64 @@ export const SalesDashboard = () => {
         </div>
 
         <div className="kpi-grid">
-          <div className="kpi-card">
-            <div className="kpi-icon revenue">
-              <DollarSign size={24} />
-            </div>
-            <div className="kpi-meta">
-              <span className="kpi-label">Filtered Revenue</span>
-              <span className="kpi-value">{periodRevenue.toLocaleString()} ETB</span>
-            </div>
-          </div>
+          {isLoadingKpi && !backendKpi ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={`kpi-skel-${i}`} className="kpi-card">
+                <div className="skeleton" style={{ width: '48px', height: '48px', borderRadius: '12px' }} />
+                <div className="kpi-meta" style={{ width: '100%' }}>
+                  <div className="skeleton skeleton-text" style={{ width: '60%', marginBottom: '6px' }} />
+                  <div className="skeleton skeleton-text" style={{ width: '85%', height: '1.2rem' }} />
+                </div>
+              </div>
+            ))
+          ) : (
+            <>
+              <div className="kpi-card">
+                <div className="kpi-icon revenue">
+                  <DollarSign size={24} />
+                </div>
+                <div className="kpi-meta">
+                  <span className="kpi-label">Filtered Revenue</span>
+                  <span className="kpi-value">{periodRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB</span>
+                </div>
+              </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon profit">
-              <TrendingUp size={24} />
-            </div>
-            <div className="kpi-meta">
-              <span className="kpi-label">Filtered Net Profit</span>
-              <span className="kpi-value">+{periodProfit.toLocaleString()} ETB</span>
-            </div>
-          </div>
+              <div className="kpi-card">
+                <div className="kpi-icon profit">
+                  <TrendingUp size={24} />
+                </div>
+                <div className="kpi-meta">
+                  <span className="kpi-label">Filtered Net Profit</span>
+                  <span className="kpi-value">+{periodProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB</span>
+                </div>
+              </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon txns">
-              <Receipt size={24} />
-            </div>
-            <div className="kpi-meta">
-              <span className="kpi-label">Orders Count</span>
-              <span className="kpi-value">{periodOrdersCount}</span>
-            </div>
-          </div>
+              <div className="kpi-card">
+                <div className="kpi-icon txns">
+                  <Receipt size={24} />
+                </div>
+                <div className="kpi-meta">
+                  <span className="kpi-label">Orders Count</span>
+                  <span className="kpi-value">{periodOrdersCount}</span>
+                </div>
+              </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon items">
-              <Package size={24} />
-            </div>
-            <div className="kpi-meta">
-              <span className="kpi-label">Items Sold</span>
-              <span className="kpi-value">{periodItemsSold} units</span>
-            </div>
-          </div>
+              <div className="kpi-card">
+                <div className="kpi-icon items">
+                  <Package size={24} />
+                </div>
+                <div className="kpi-meta">
+                  <span className="kpi-label">Items Sold</span>
+                  <span className="kpi-value">{periodItemsSold} units</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Transactions Log Table */}
-      <div className="table-card">
+      <div className="table-card" style={{ marginTop: '1.5rem' }}>
         <div className="table-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <Receipt size={20} color="var(--accent-primary)" />
@@ -312,7 +376,7 @@ export const SalesDashboard = () => {
           <thead>
             <tr>
               <th>Order ID</th>
-              <th>Date & Time</th>
+              <th>Date &amp; Time</th>
               <th>Payment Method</th>
               <th>Items Sold</th>
               <th>Revenue</th>
@@ -321,10 +385,30 @@ export const SalesDashboard = () => {
             </tr>
           </thead>
           <tbody>
-            {finalFilteredTransactions.length === 0 ? (
+            {shopLoading && transactions.length === 0 ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <tr key={`txn-skel-${i}`}>
+                  <td><div className="skeleton skeleton-text" style={{ width: '90px' }} /></td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '130px' }} /></td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '80px', height: '22px', borderRadius: '12px' }} /></td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '180px' }} /></td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '70px' }} /></td>
+                  <td><div className="skeleton skeleton-text" style={{ width: '70px' }} /></td>
+                  <td style={{ textAlign: 'right' }}><div className="skeleton skeleton-text" style={{ width: '32px', marginLeft: 'auto' }} /></td>
+                </tr>
+              ))
+            ) : finalFilteredTransactions.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem' }}>
-                  No sales transactions logged for {getTimePeriodLabel()} ({selectedPaymentFilter} Payment).
+                <td colSpan="7">
+                  <div className="empty-state">
+                    <div className="empty-state-icon">
+                      <Inbox size={28} />
+                    </div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>No sales transactions found</div>
+                    <div style={{ fontSize: '0.85rem' }}>
+                      No orders match {getTimePeriodLabel()} with {selectedPaymentFilter} payment filter.
+                    </div>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -348,9 +432,9 @@ export const SalesDashboard = () => {
                     <td style={{ color: 'var(--text-secondary)' }}>
                       {totalUnits} items ({txn.items.map((i) => `${i.name} (${i.quantity})`).join(', ')})
                     </td>
-                    <td style={{ fontWeight: 800 }}>{txn.totalRevenue} ETB</td>
+                    <td style={{ fontWeight: 800 }}>{txn.totalRevenue.toFixed(2)} ETB</td>
                     <td style={{ fontWeight: 800, color: 'var(--success)' }}>
-                      +{txn.totalProfit} ETB
+                      +{txn.totalProfit.toFixed(2)} ETB
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <button
@@ -387,7 +471,7 @@ export const SalesDashboard = () => {
 
             <div className="modal-body">
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Date & Time:</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Date &amp; Time:</span>
                 <span style={{ fontWeight: 600 }}>{formatDate(selectedTxnDetail.timestamp)}</span>
               </div>
 
@@ -413,7 +497,7 @@ export const SalesDashboard = () => {
                         key={idx}
                         style={{
                           display: 'flex',
-                          justify: 'space-between',
+                          justifyContent: 'space-between',
                           alignItems: 'center',
                           background: 'var(--bg-card)',
                           padding: '0.6rem 0.8rem',
@@ -425,13 +509,13 @@ export const SalesDashboard = () => {
                         <div>
                           <div style={{ fontWeight: 700 }}>{item.name}</div>
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                            Cost: {item.costPrice} ETB | Sell: {item.sellingPrice} ETB × {item.quantity}
+                            {item.quantity} units @ {item.sellingPrice} ETB (Cost: {item.costPrice} ETB/unit)
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontWeight: 800 }}>{rev} ETB</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 700 }}>
-                            Profit: +{profit} ETB
+                          <div style={{ fontWeight: 800 }}>{rev.toFixed(2)} ETB</div>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--success)' }}>
+                            +{profit.toFixed(2)} ETB profit
                           </div>
                         </div>
                       </div>
@@ -442,31 +526,29 @@ export const SalesDashboard = () => {
 
               <div
                 style={{
+                  borderTop: '2px solid var(--border-color)',
+                  paddingTop: '0.75rem',
                   display: 'flex',
-                  justify: 'space-between',
-                  background: 'var(--bg-card)',
-                  padding: '0.85rem',
-                  borderRadius: '10px',
-                  border: '1px solid var(--border-color)',
-                  marginTop: '0.5rem'
+                  justifyContent: 'space-between',
+                  fontWeight: 800,
+                  fontSize: '1rem'
                 }}
               >
-                <div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Total Revenue</div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>{selectedTxnDetail.totalRevenue} ETB</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Total Net Profit</div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--success)' }}>
-                    +{selectedTxnDetail.totalProfit} ETB
-                  </div>
-                </div>
+                <span>Total Order Profit:</span>
+                <span style={{ color: 'var(--success)' }}>
+                  +{selectedTxnDetail.totalProfit.toFixed(2)} ETB
+                </span>
               </div>
             </div>
 
             <div className="modal-footer">
-              <button className="btn-primary" onClick={() => setSelectedTxnDetail(null)}>
-                Close
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setSelectedTxnDetail(null)}
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                Close Receipt
               </button>
             </div>
           </div>
