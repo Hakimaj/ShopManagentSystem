@@ -14,7 +14,7 @@ export const useShop = () => {
 };
 
 // Normalize backend product → frontend shape
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
 
 const normalizeProduct = (p) => {
   let img = p.image_url || '';

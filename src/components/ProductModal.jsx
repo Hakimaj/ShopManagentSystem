@@ -102,7 +102,7 @@ export const ProductModal = ({ isOpen, onClose, product }) => {
       try {
         setFormError('');
         const uploadRes = await uploadsApi.uploadImage(file);
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
         setFormData((prev) => ({ ...prev, imageUrl: `${BACKEND_URL}${uploadRes.url}` }));
         setShowImageSourceMenu(false);
       } catch (err) {
