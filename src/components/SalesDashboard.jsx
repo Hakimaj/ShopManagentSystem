@@ -63,6 +63,13 @@ export const SalesDashboard = () => {
     return d >= sixMonthsAgo;
   };
 
+  const isLastYear = (isoDateString) => {
+    const d = new Date(isoDateString);
+    const yearAgo = new Date();
+    yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+    return d >= yearAgo;
+  };
+
   // 1. First filter transactions by Time Period
   const dateFilteredTransactions = transactions.filter((txn) => {
     if (timeFilter === 'daily') {
@@ -73,6 +80,9 @@ export const SalesDashboard = () => {
     }
     if (timeFilter === 'half_year') {
       return isLastSixMonths(txn.timestamp);
+    }
+    if (timeFilter === 'yearly') {
+      return isLastYear(txn.timestamp);
     }
     if (timeFilter === 'custom') {
       return isSameDay(txn.timestamp, customDate);
@@ -233,6 +243,14 @@ export const SalesDashboard = () => {
             style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
           >
             Last 6 Months
+          </button>
+
+          <button
+            className={`pill-btn ${timeFilter === 'yearly' ? 'active' : ''}`}
+            onClick={() => setTimeFilter('yearly')}
+            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+          >
+            Yearly
           </button>
 
           <button

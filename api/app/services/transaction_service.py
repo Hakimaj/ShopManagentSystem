@@ -132,6 +132,9 @@ class TransactionService:
         elif period == "half_year":
             start = now - timedelta(days=180)
             return start, None
+        elif period == "yearly":
+            start = now - timedelta(days=365)
+            return start, None
         elif period == "custom" and custom_date:
             try:
                 d = datetime.strptime(custom_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)

@@ -1070,8 +1070,8 @@ img {
   border-color: var(--accent-primary);
 }
 
-/* MOBILE-FIRST RESPONSIVE MEDIA QUERIES (<= 1024px) */
-@media (max-width: 1024px) {
+/* MOBILE-FIRST RESPONSIVE MEDIA QUERIES (<= 768px) */
+@media (max-width: 768px) {
   .navbar {
     padding: 0.75rem 1rem;
   }

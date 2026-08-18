@@ -25,23 +25,18 @@ export const Navbar = () => {
   return (
     <header className="navbar">
       <div className="brand-section">
-        <div
-          className="brand-logo"
+        <img
+          src="https://lh3.googleusercontent.com/d/1gEuI5_8YF6aRR1R2vYRDZutkr5jdy1lg"
+          alt="Juju Clean Logo"
           style={{
-            background: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
             width: '38px',
             height: '38px',
             borderRadius: '10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff'
+            objectFit: 'cover'
           }}
-        >
-          <Store size={20} />
-        </div>
+        />
         <div>
-          <div className="brand-title">Cleancare POS</div>
+          <div className="brand-title">ጁጁ ጽዳት</div>
         </div>
         <span className="brand-tag">Household &amp; Care</span>
       </div>
