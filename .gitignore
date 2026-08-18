@@ -1,21 +1,43 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.env
+*.local
+
+# Node & Frontend Build
+node_modules/
+dist/
+dist-ssr/
+
+# Python & Backend
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+*.sqlite3
+*.db
+backend/cleancare.db
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Vercel
+.vercel/
 
-# Editor directories and files
+# Editor & OS files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
@@ -24,3 +46,4 @@ dist-ssr
 *.sw?
 
 .vercel
+.env*

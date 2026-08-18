@@ -1,4 +1,8 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+// In production (Vercel) VITE_API_BASE_URL is '/api' (set in .env.production).
+// In local dev it can be overridden to 'http://localhost:8000/api' via .env.
+// We guard against localhost ever being used in a non-local context.
+const _rawBase = import.meta.env.VITE_API_BASE_URL || '/api';
+const API_BASE_URL = _rawBase.includes('localhost') && import.meta.env.PROD ? '/api' : _rawBase;
 
 export class ApiError extends Error {
   constructor(message, status, data) {

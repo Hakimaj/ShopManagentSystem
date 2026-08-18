@@ -14,7 +14,9 @@ export const useShop = () => {
 };
 
 // Normalize backend product → frontend shape
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+// In production (Vercel) frontend and backend share the same origin, so BACKEND_URL is ''.
+// In local dev, set VITE_BACKEND_URL=http://localhost:8000 in .env for the proxy to work.
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? '';
 
 const normalizeProduct = (p) => {
   let img = p.image_url || '';
