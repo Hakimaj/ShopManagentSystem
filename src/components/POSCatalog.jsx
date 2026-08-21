@@ -9,22 +9,24 @@ export const POSCatalog = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [addedItemEffect, setAddedItemEffect] = useState(null);
 
-  // Dynamic populated categories filter: only show categories that have products in them
+  // All distinct categories drawn directly from loaded products — no
+  // cross-filtering against customCategories to avoid silent mismatches
+  // with Amharic / mixed-language category names.
   const populatedCategories = [
     'All',
-    ...new Set(
-      (customCategories || [])
-        .concat(products.map((p) => p.category))
-        .filter((cat) => cat && products.some((product) => product.category === cat))
-    )
+    ...new Set(products.map((p) => p.category).filter(Boolean))
   ];
 
-  // Filter products
+  // Filter products — search works on raw string contents, no locale transform
+  // that could break Amharic text comparison.
   const filteredProducts = products.filter((product) => {
-    const matchesSearch =
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.category.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.trim();
+    const matchesSearch = q === '' || (
+      product.name.toLowerCase().includes(q.toLowerCase()) ||
+      product.sku.toLowerCase().includes(q.toLowerCase()) ||
+      (product.category || '').toLowerCase().includes(q.toLowerCase()) ||
+      (product.description || '').toLowerCase().includes(q.toLowerCase())
+    );
 
     const matchesCategory =
       selectedCategory === 'All' || product.category === selectedCategory;
