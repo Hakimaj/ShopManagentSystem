@@ -20,6 +20,24 @@ class ProductRepository(BaseRepository):
         )
         return self.db.execute(stmt).scalar_one_or_none()
 
+    def get_by_name(
+        self,
+        name: str,
+        category_id: int | None = None,
+        active_only: bool = True
+    ) -> list[Product]:
+        """Return all products whose name matches (case-insensitive)."""
+        stmt = (
+            select(Product)
+            .options(joinedload(Product.category))
+            .where(func.lower(Product.name) == name.lower().strip())
+        )
+        if active_only:
+            stmt = stmt.where(Product.is_active == True)
+        if category_id is not None:
+            stmt = stmt.where(Product.category_id == category_id)
+        return list(self.db.execute(stmt).scalars().unique().all())
+
     def list_products(
         self,
         search: str | None = None,

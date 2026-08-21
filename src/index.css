@@ -738,6 +738,11 @@ img {
   z-index: 50;
 }
 
+/* Bottom nav — hidden on desktop, shown via media query on mobile */
+.mobile-bottom-nav {
+  display: none;
+}
+
 .mobile-cart-btn {
   width: 100%;
   padding: 0.9rem 1.25rem;
@@ -1072,8 +1077,16 @@ img {
 
 /* MOBILE-FIRST RESPONSIVE MEDIA QUERIES (<= 768px) */
 @media (max-width: 768px) {
+  /* ── Navbar: stack brand + actions, hide center tabs ── */
   .navbar {
-    padding: 0.75rem 1rem;
+    padding: 0.6rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .brand-section {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   
   .brand-title {
@@ -1084,8 +1097,57 @@ img {
     display: none;
   }
 
+  /* Hide the desktop center nav-tabs pill bar on mobile */
+  .nav-tabs {
+    display: none;
+  }
+
+  .nav-actions {
+    flex: 0 0 auto;
+  }
+
+  /* ── Bottom Navigation Bar (mobile-only) ── */
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  .mobile-bottom-nav .tab-btn {
+    flex: 1;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.55rem 0.25rem;
+    border-radius: 0;
+    font-size: 0.7rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    justify-content: center;
+    min-height: 56px;
+  }
+
+  .mobile-bottom-nav .tab-btn.active {
+    color: var(--accent-primary);
+    background: var(--accent-glow);
+    box-shadow: none;
+    border: none;
+  }
+
+  .mobile-bottom-nav .tab-btn svg {
+    flex-shrink: 0;
+  }
+
+  /* Push main content up so it's not hidden behind the bottom nav */
   .main-content {
     padding: 0.75rem;
+    padding-bottom: 5rem; /* reserve space for fixed bottom nav */
   }
 
   .pos-layout {

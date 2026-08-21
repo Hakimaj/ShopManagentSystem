@@ -50,8 +50,8 @@ class ProductService:
     def create_product(self, product_in: ProductCreate) -> Product:
         # 1. Check SKU Uniqueness
         clean_sku = product_in.sku.strip()
-        existing = self.repository.get_by_sku(clean_sku)
-        if existing:
+        existing_sku = self.repository.get_by_sku(clean_sku)
+        if existing_sku:
             raise DuplicateEntityException(f"Product with SKU '{clean_sku}' already exists.")
 
         # 2. Check Category existence
@@ -59,11 +59,45 @@ class ProductService:
         if not category:
             raise EntityNotFoundException(f"Category with ID {product_in.category_id} not found.")
 
-        # 3. Create Product
+        # 3. Duplicate-name / duplicate-cost logic
+        #    a) Find any active product with the exact same name (case-insensitive)
+        clean_name = product_in.name.strip()
+        new_cost = product_in.cost_price
+        same_name_products = self.repository.get_by_name(clean_name, category_id=None, active_only=True)
+
+        if same_name_products:
+            # Check if any existing product has the SAME cost price
+            same_cost = next(
+                (p for p in same_name_products if p.cost_price == new_cost), None
+            )
+            if same_cost:
+                # Same name + same cost → just add stock to the existing item
+                same_cost.current_stock += int(product_in.current_stock)
+                self.db.commit()
+                self.db.refresh(same_cost)
+                return same_cost
+            else:
+                # Same name + different cost → create with auto-suffixed name
+                clean_name = self._next_available_name(clean_name)
+
+        # 4. Create Product
         data = product_in.model_dump()
         data["sku"] = clean_sku
-        data["name"] = product_in.name.strip()
+        data["name"] = clean_name
         return self.repository.create(data)
+
+    def _next_available_name(self, base_name: str) -> str:
+        """Return the next available name by appending an incrementing integer suffix.
+        e.g. 'Soap' → 'Soap 1', 'Soap 1' → 'Soap 2', etc.
+        """
+        counter = 1
+        while True:
+            candidate = f"{base_name} {counter}"
+            # Check whether this candidate already exists in DB
+            existing = self.repository.get_by_name(candidate, category_id=None, active_only=False)
+            if not existing:
+                return candidate
+            counter += 1
 
     def update_product(self, product_id: int, product_in: ProductUpdate) -> Product:
         product = self.get_product_by_id(product_id)

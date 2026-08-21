@@ -55,8 +55,10 @@ const normalizeTxn = (t) => ({
 
 export const ShopProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
+  const [productsMeta, setProductsMeta] = useState(null);   // { total, page, size, pages }
   const [categoriesList, setCategoriesList] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [txnMeta, setTxnMeta] = useState(null);             // { total, page, size, pages }
   const [cart, setCart] = useState([]);
   const [activeTab, setActiveTab] = useState('pos');
   const [theme, setTheme] = useState(() => localStorage.getItem('antishop_theme') || 'light');
@@ -64,6 +66,8 @@ export const ShopProvider = ({ children }) => {
   const [isTxnModalOpen, setIsTxnModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
+  const [isLoadingMoreProducts, setIsLoadingMoreProducts] = useState(false);
+  const [isLoadingMoreTxns, setIsLoadingMoreTxns] = useState(false);
 
   // Persist theme preference (not business data)
   useEffect(() => {
@@ -79,13 +83,14 @@ export const ShopProvider = ({ children }) => {
     setApiError(null);
     try {
       const [prodRes, catRes, txnRes] = await Promise.allSettled([
-        productsApi.list({ size: 100, is_active: true }),
+        productsApi.list({ size: 50, page: 1, is_active: true }),  // initial page only
         categoriesApi.list(),
-        transactionsApi.list({ size: 100 })
+        transactionsApi.list({ size: 50, page: 1 })               // initial page only
       ]);
 
       if (prodRes.status === 'fulfilled' && prodRes.value?.items) {
         setProducts(prodRes.value.items.map(normalizeProduct));
+        setProductsMeta(prodRes.value.meta || null);
       } else if (prodRes.status === 'rejected') {
         throw prodRes.reason;
       }
@@ -96,6 +101,12 @@ export const ShopProvider = ({ children }) => {
 
       if (txnRes.status === 'fulfilled' && txnRes.value?.items) {
         setTransactions(txnRes.value.items.map(normalizeTxn));
+        setTxnMeta(txnRes.value ? {
+          total: txnRes.value.total,
+          page: txnRes.value.page,
+          size: txnRes.value.size,
+          pages: txnRes.value.pages
+        } : null);
       }
     } catch (err) {
       // Only set error if it's not an auth error (401 handled globally)
@@ -120,12 +131,10 @@ export const ShopProvider = ({ children }) => {
     setCart((prevCart) => {
       const existingIndex = prevCart.findIndex((item) => item.product.id === product.id);
       if (existingIndex > -1) {
-        const currentQty = prevCart[existingIndex].quantity;
-        if (currentQty >= liveProduct.currentStock) return prevCart;
-        const updated = [...prevCart];
-        updated[existingIndex] = { ...updated[existingIndex], quantity: updated[existingIndex].quantity + 1 };
-        return updated;
+        // Second click: remove the item entirely from cart (toggle off)
+        return prevCart.filter((item) => item.product.id !== product.id);
       }
+      // First click: add with quantity 1
       return [...prevCart, { product: liveProduct, quantity: 1, soldPrice: liveProduct.sellingPrice }];
     });
     return true;
@@ -182,9 +191,12 @@ export const ShopProvider = ({ children }) => {
       setCart([]);
       setIsTxnModalOpen(true);
 
-      // Refresh products to reflect updated stock
-      const prodRes = await productsApi.list({ size: 100, is_active: true });
-      if (prodRes?.items) setProducts(prodRes.items.map(normalizeProduct));
+      // Refresh products to reflect updated stock (first page only — pagination preserved)
+      const prodRes = await productsApi.list({ size: 50, page: 1, is_active: true });
+      if (prodRes?.items) {
+        setProducts(prodRes.items.map(normalizeProduct));
+        setProductsMeta(prodRes.meta || null);
+      }
 
       return { success: true, transaction: normalizedTxn };
     } catch (err) {
@@ -288,13 +300,65 @@ export const ShopProvider = ({ children }) => {
 
   const customCategories = categoriesList.map((c) => c.name);
 
+  // ─── Pagination: Load More Products ──────────────────────────────────────
+  const loadMoreProducts = async () => {
+    if (!productsMeta || productsMeta.page >= productsMeta.pages || isLoadingMoreProducts) return;
+    setIsLoadingMoreProducts(true);
+    try {
+      const nextPage = productsMeta.page + 1;
+      const res = await productsApi.list({ size: productsMeta.size, page: nextPage, is_active: true });
+      if (res?.items) {
+        setProducts((prev) => {
+          // Deduplicate by id
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newItems = res.items.map(normalizeProduct).filter((p) => !existingIds.has(p.id));
+          return [...prev, ...newItems];
+        });
+        setProductsMeta(res.meta || null);
+      }
+    } catch (err) {
+      console.warn('loadMoreProducts error:', err.message);
+    } finally {
+      setIsLoadingMoreProducts(false);
+    }
+  };
+
+  // ─── Pagination: Load More Transactions ──────────────────────────────────
+  const loadMoreTransactions = async () => {
+    if (!txnMeta || txnMeta.page >= txnMeta.pages || isLoadingMoreTxns) return;
+    setIsLoadingMoreTxns(true);
+    try {
+      const nextPage = txnMeta.page + 1;
+      const res = await transactionsApi.list({ size: txnMeta.size, page: nextPage });
+      if (res?.items) {
+        setTransactions((prev) => {
+          const existingIds = new Set(prev.map((t) => t.id));
+          const newItems = res.items.map(normalizeTxn).filter((t) => !existingIds.has(t.id));
+          return [...prev, ...newItems];
+        });
+        setTxnMeta({
+          total: res.total,
+          page: res.page,
+          size: res.size,
+          pages: res.pages
+        });
+      }
+    } catch (err) {
+      console.warn('loadMoreTransactions error:', err.message);
+    } finally {
+      setIsLoadingMoreTxns(false);
+    }
+  };
+
   return (
     <ShopContext.Provider
       value={{
         products,
+        productsMeta,
         categoriesList,
         customCategories,
         transactions,
+        txnMeta,
         cart,
         activeTab,
         setActiveTab,
@@ -313,6 +377,10 @@ export const ShopProvider = ({ children }) => {
         addCategory,
         deleteCategory,
         loadData,
+        loadMoreProducts,
+        loadMoreTransactions,
+        isLoadingMoreProducts,
+        isLoadingMoreTxns,
         lastTransaction,
         isTxnModalOpen,
         setIsTxnModalOpen,

@@ -48,7 +48,19 @@ export async function apiRequest(endpoint, options = {}) {
     }
 
     if (!response.ok) {
-      const errorMsg = data?.detail || `API request failed with status ${response.status}`;
+      let errorMsg;
+      if (data?.detail) {
+        // Pydantic validation errors return detail as an array of objects
+        if (Array.isArray(data.detail)) {
+          errorMsg = data.detail
+            .map((e) => (e.msg ? `${e.loc?.join('.')} — ${e.msg}` : JSON.stringify(e)))
+            .join('; ');
+        } else {
+          errorMsg = String(data.detail);
+        }
+      } else {
+        errorMsg = `API request failed with status ${response.status}`;
+      }
       throw new ApiError(errorMsg, response.status, data);
     }
 

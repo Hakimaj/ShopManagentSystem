@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
+import { useAuth } from '../context/AuthContext';
 import {
   Plus,
   Search,
@@ -15,13 +16,19 @@ import { ErrorBanner } from './ErrorBanner';
 export const InventoryManager = () => {
   const {
     products,
+    productsMeta,
     customCategories,
     removeProduct,
     adjustStock,
     isLoading,
+    isLoadingMoreProducts,
+    loadMoreProducts,
     apiError,
     loadData
   } = useShop();
+
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'ADMIN';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -99,10 +106,13 @@ export const InventoryManager = () => {
           </p>
         </div>
 
-        <button className="btn-primary" onClick={handleOpenAddModal} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Plus size={18} />
-          <span>Add New Product</span>
-        </button>
+        {/* Add New Product button — Admin only */}
+        {isAdmin && (
+          <button className="btn-primary" onClick={handleOpenAddModal} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Plus size={18} />
+            <span>Add New Product</span>
+          </button>
+        )}
       </div>
 
       {apiError && <ErrorBanner message={apiError} onRetry={loadData} loading={isLoading} />}
@@ -246,12 +256,13 @@ export const InventoryManager = () => {
                         </div>
                       ) : (
                         <div
-                          style={{ cursor: 'pointer' }}
+                          style={{ cursor: isAdmin ? 'pointer' : 'default' }}
                           onClick={() => {
+                            if (!isAdmin) return;
                             setQuickStockEditingId(product.id);
                             setQuickStockValue(product.currentStock.toString());
                           }}
-                          title="Click to edit stock level"
+                          title={isAdmin ? 'Click to edit stock level' : undefined}
                         >
                           <span
                             className={`stock-badge ${
@@ -275,26 +286,29 @@ export const InventoryManager = () => {
                       )}
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                        <button
-                          className="icon-btn"
-                          style={{ display: 'inline-flex', width: 32, height: 32 }}
-                          onClick={() => handleOpenEditModal(product)}
-                          title="Edit Product Details"
-                          disabled={isDeleting}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          className="icon-btn"
-                          style={{ display: 'inline-flex', width: 32, height: 32, background: 'var(--danger)', color: '#fff' }}
-                          onClick={() => handleDeleteProduct(product)}
-                          title="Deactivate Product"
-                          disabled={isDeleting}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      {/* Edit and Delete buttons — Admin only */}
+                      {isAdmin && (
+                        <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                          <button
+                            className="icon-btn"
+                            style={{ display: 'inline-flex', width: 32, height: 32 }}
+                            onClick={() => handleOpenEditModal(product)}
+                            title="Edit Product Details"
+                            disabled={isDeleting}
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            className="icon-btn"
+                            style={{ display: 'inline-flex', width: 32, height: 32, background: 'var(--danger)', color: '#fff' }}
+                            onClick={() => handleDeleteProduct(product)}
+                            title="Deactivate Product"
+                            disabled={isDeleting}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -304,12 +318,33 @@ export const InventoryManager = () => {
         </table>
       </div>
 
-      {isProductModalOpen && (
+      {isProductModalOpen && isAdmin && (
         <ProductModal
           isOpen={isProductModalOpen}
           onClose={() => setIsProductModalOpen(false)}
           product={editingProduct}
         />
+      )}
+
+      {/* Load More Products */}
+      {productsMeta && productsMeta.page < productsMeta.pages && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+          <button
+            className="btn-secondary"
+            onClick={loadMoreProducts}
+            disabled={isLoadingMoreProducts}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.65rem 2rem' }}
+          >
+            {isLoadingMoreProducts ? (
+              <>
+                <span style={{ width: 16, height: 16, border: '2px solid var(--border-color)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                Loading…
+              </>
+            ) : (
+              `Load More (${products.length} / ${productsMeta.total} shown)`
+            )}
+          </button>
+        </div>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useShop } from '../context/ShopContext';
 import { dashboardApi } from '../services/dashboardApi';
 import { ErrorBanner } from './ErrorBanner';
+import { ReportGenerator } from './ReportGenerator';
 import {
   DollarSign,
   TrendingUp,
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 
 export const SalesDashboard = () => {
-  const { transactions, isLoading: shopLoading, loadData } = useShop();
+  const { transactions, isLoading: shopLoading, loadData, txnMeta, loadMoreTransactions, isLoadingMoreTxns } = useShop();
 
   // Revenue Time Period Filters: 'daily' | 'monthly' | 'all' | 'custom' | 'half_year'
   const [timeFilter, setTimeFilter] = useState('all');
@@ -189,6 +190,7 @@ export const SalesDashboard = () => {
             Authoritative breakdown of sales revenue, net profits, and transaction history.
           </p>
         </div>
+        <ReportGenerator currentTimeFilter={timeFilter} currentCustomDate={customDate} />
       </div>
 
       {kpiError && (
@@ -471,6 +473,27 @@ export const SalesDashboard = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Load More Transactions */}
+      {txnMeta && txnMeta.page < txnMeta.pages && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+          <button
+            className="btn-secondary"
+            onClick={loadMoreTransactions}
+            disabled={isLoadingMoreTxns}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.65rem 2rem' }}
+          >
+            {isLoadingMoreTxns ? (
+              <>
+                <span style={{ width: 16, height: 16, border: '2px solid var(--border-color)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                Loading…
+              </>
+            ) : (
+              `Load More Transactions (${transactions.length} / ${txnMeta.total} loaded)`
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Transaction Detail Breakdown Modal */}
       {selectedTxnDetail && (

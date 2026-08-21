@@ -1,19 +1,19 @@
 import logging
-from sqlalchemy import select, text
+from sqlalchemy import select
 from app.db.session import engine, SessionLocal
 from app.db.base_class import Base
 # Import all models to ensure they are registered with Base.metadata
 import app.models  # noqa: F401
 from app.models.user import User, UserRole
 from app.core.security import get_password_hash
-from app.db.seed_data import SEED_USERS
 
 logger = logging.getLogger("init_db")
 
 def init_db() -> None:
     """
-    1. Generates all tables in MySQL / SQLite database using SQLAlchemy metadata.
-    2. Resets/syncs users table with properly bcrypt-hashed passwords for default users.
+    1. Generates any missing tables using SQLAlchemy metadata (safe — ignores existing tables/data).
+    2. Seeds default admin/staff accounts ONLY if they do not already exist.
+       Existing users and their passwords are NEVER modified.
     """
     try:
         logger.info("Initializing database tables...")
@@ -22,8 +22,6 @@ def init_db() -> None:
 
         db = SessionLocal()
         try:
-            # Force re-sync of default user accounts with verified bcrypt hashes
-            # Supports both 'password' and 'admin123' / 'staff123'
             default_accounts = [
                 {
                     "username": "admin",
@@ -45,30 +43,27 @@ def init_db() -> None:
                 stmt = select(User).where(User.username == acc["username"])
                 existing_user = db.execute(stmt).scalar_one_or_none()
 
-                hashed_pwd = get_password_hash(acc["password"])
-
                 if not existing_user:
+                    # Only create the user if they do not yet exist
                     new_user = User(
                         username=acc["username"],
                         email=acc["email"],
                         full_name=acc["full_name"],
                         role=acc["role"],
-                        hashed_password=hashed_pwd,
+                        hashed_password=get_password_hash(acc["password"]),
                         is_active=True
                     )
                     db.add(new_user)
-                    logger.info(f"Created user '{acc['username']}' with bcrypt hashed password.")
+                    logger.info(f"Created default user '{acc['username']}'.")
                 else:
-                    # Update existing password with freshly calculated bcrypt hash to guarantee login works
-                    existing_user.hashed_password = hashed_pwd
-                    existing_user.is_active = True
-                    logger.info(f"Updated user '{acc['username']}' with freshly verified bcrypt hash.")
+                    # User already exists — do NOT touch their password or any other field
+                    logger.info(f"User '{acc['username']}' already exists — skipping (data preserved).")
 
             db.commit()
-            logger.info("User accounts verified and seeded successfully.")
+            logger.info("Startup user check complete.")
         except Exception as seed_err:
             db.rollback()
-            logger.warning(f"Error checking/seeding users: {seed_err}")
+            logger.warning(f"Error during startup user check: {seed_err}")
         finally:
             db.close()
     except Exception as e:
