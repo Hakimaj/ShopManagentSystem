@@ -146,6 +146,8 @@ export const InventoryManager = () => {
           </div>
         </div>
 
+        {/* Horizontal scroll wrapper — reveals all columns on mobile */}
+        <div className="table-scroll-wrapper">
         <table className="custom-table">
           <thead>
             <tr>
@@ -316,6 +318,7 @@ export const InventoryManager = () => {
             )}
           </tbody>
         </table>
+        </div>{/* end table-scroll-wrapper */}
       </div>
 
       {isProductModalOpen && isAdmin && (

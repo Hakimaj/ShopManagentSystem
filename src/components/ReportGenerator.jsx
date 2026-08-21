@@ -3,9 +3,41 @@ import { FileDown, Calendar, Loader2 } from 'lucide-react';
 import { dashboardApi } from '../services/dashboardApi';
 import { transactionsApi } from '../services/transactionsApi';
 
-// jsPDF + autotable are loaded on-demand (dynamic import) to keep the
-// initial app bundle lean. They are only fetched when the user clicks
-// "Generate Report" for the first time.
+/**
+ * ReportGenerator — generates a PDF with full Amharic / Ethiopic support.
+ *
+ * Font strategy:
+ *   Noto Sans Ethiopic is fetched once from jsDelivr (fontsource CDN),
+ *   converted to a base64 string, then registered into jsPDF's virtual
+ *   filesystem. After that, doc.setFont('NotoSansEthiopic') renders all
+ *   Amharic / Ethiopic / Ge'ez characters correctly.
+ *
+ * The font (~270 KB) is only downloaded when the user clicks "Generate
+ * Report" for the first time; subsequent clicks use a module-level cache.
+ */
+
+const FONT_CDN =
+  'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-ethiopic@5/ethiopic-400-normal.ttf';
+
+const FONT_NAME = 'NotoSansEthiopic';
+
+// Module-level cache — fetched once per browser session.
+let _fontBase64Cache = null;
+
+async function loadEthiopicFontBase64() {
+  if (_fontBase64Cache) return _fontBase64Cache;
+  const res = await fetch(FONT_CDN);
+  if (!res.ok) throw new Error(`Failed to fetch Ethiopic font (HTTP ${res.status})`);
+  const buffer = await res.arrayBuffer();
+  // Convert ArrayBuffer → base64 string
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  _fontBase64Cache = btoa(binary);
+  return _fontBase64Cache;
+}
 
 function getTodayFormatted() {
   const d = new Date();
@@ -21,101 +53,129 @@ const PERIOD_LABELS = {
   custom:    'Specific Day'
 };
 
-// jsPDF's built-in fonts (helvetica) only support Latin-1 characters.
-// We replace Ethiopic characters with their Latin equivalents for PDF output only —
-// the UI still shows the Ethiopic names normally.
-function safePdfText(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/ጁጁ ጽዳት/g, 'Juju Tzidat')
-    .replace(/[^\x00-\xFF]/g, '?'); // fallback: replace any remaining non-Latin-1
-}
-
 export const ReportGenerator = ({ currentTimeFilter, currentCustomDate }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [reportPeriod, setReportPeriod] = useState(currentTimeFilter || 'all');
   const [reportDate, setReportDate] = useState(currentCustomDate || getTodayFormatted());
+  const [statusMsg, setStatusMsg] = useState('');  // shows progress steps
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleGenerate = async () => {
     setIsGenerating(true);
     setErrorMsg('');
+    setStatusMsg('Loading font…');
 
     try {
-      // ── 0. Load PDF libraries on demand ─────────────────────────────
-      // autoTable patches jsPDF.prototype — it must be imported AFTER jsPDF.
-      const { default: jsPDF }    = await import('jspdf');
-      await import('jspdf-autotable');          // side-effect: patches jsPDF.prototype
-      // autoTable is now available as doc.autoTable() on the instance,
-      // but jspdf-autotable also exports a named fn we can call directly.
+      // ── 0. Load jsPDF + autoTable + Ethiopic font in parallel ────────
+      const [
+        { default: jsPDF },
+        _autoTableModule,
+        fontBase64
+      ] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),   // side-effect: patches jsPDF.prototype
+        loadEthiopicFontBase64()
+      ]);
       const { default: autoTable } = await import('jspdf-autotable');
 
-      // ── 1. Fetch ALL transactions for the period (paginate, max 100/page) ──
+      setStatusMsg('Fetching data…');
+
+      // ── 1. Paginate through ALL transactions (backend max 100/page) ──
       const PAGE_SIZE = 100;
       let allTransactions = [];
-      let currentPage = 1;
+      let page = 1;
       let totalPages = 1;
 
-      do {
+      // Kick off first page and KPI fetch in parallel
+      const [firstPage, kpiRes] = await Promise.all([
+        transactionsApi.list({
+          period: reportPeriod,
+          custom_date: reportPeriod === 'custom' ? reportDate : undefined,
+          size: PAGE_SIZE,
+          page: 1
+        }),
+        dashboardApi.getSummary({
+          period: reportPeriod,
+          custom_date: reportPeriod === 'custom' ? reportDate : undefined
+        })
+      ]);
+
+      allTransactions = firstPage?.items ?? [];
+      totalPages = firstPage?.pages ?? 1;
+
+      // Fetch remaining pages if there are more
+      for (let p = 2; p <= totalPages; p++) {
+        setStatusMsg(`Fetching page ${p} of ${totalPages}…`);
         const res = await transactionsApi.list({
           period: reportPeriod,
           custom_date: reportPeriod === 'custom' ? reportDate : undefined,
           size: PAGE_SIZE,
-          page: currentPage
+          page: p
         });
-        const items = res?.items ?? [];
-        allTransactions = allTransactions.concat(items);
-        totalPages = res?.pages ?? 1;
-        currentPage++;
-      } while (currentPage <= totalPages);
-
-      // Fetch KPI summary in parallel with the first page (already done above)
-      const kpiRes = await dashboardApi.getSummary({
-        period: reportPeriod,
-        custom_date: reportPeriod === 'custom' ? reportDate : undefined
-      });
+        allTransactions = allTransactions.concat(res?.items ?? []);
+      }
 
       const transactions = allTransactions;
       const kpi = kpiRes?.kpi ?? {};
 
-      // ── 2. Initialise document ───────────────────────────────────────
+      setStatusMsg('Building PDF…');
+
+      // ── 2. Initialise jsPDF ──────────────────────────────────────────
       const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
-      const now = new Date();
-      const ACCENT = [79, 70, 229];
-      const DARK   = [15, 23, 42];
-      const MUTED  = [100, 116, 139];
-      const GREEN  = [5, 150, 105];
-      const STRIPE = [241, 245, 249];
+      const now   = new Date();
+
+      // ── 3. Register Noto Sans Ethiopic ───────────────────────────────
+      // addFileToVFS puts the raw TTF bytes into jsPDF's virtual FS.
+      // addFont maps that file to a family name + style.
+      doc.addFileToVFS(`${FONT_NAME}.ttf`, fontBase64);
+      doc.addFont(`${FONT_NAME}.ttf`, FONT_NAME, 'normal');
+
+      // Helper: set the Ethiopic font (used everywhere)
+      const setEthFont   = (size = 10, style = 'normal') => {
+        doc.setFont(FONT_NAME, style);
+        doc.setFontSize(size);
+      };
+      // For column headers / labels where only ASCII is needed we still
+      // use helvetica (lighter weight inside the PDF byte stream).
+      const setLatinFont = (size = 10, style = 'normal') => {
+        doc.setFont('helvetica', style);
+        doc.setFontSize(size);
+      };
+
+      // Colour constants
+      const ACCENT  = [79, 70, 229];
+      const DARK    = [15, 23, 42];
+      const MUTED   = [100, 116, 139];
+      const GREEN   = [5, 150, 105];
+      const STRIPE  = [241, 245, 249];
+      const WHITE   = [255, 255, 255];
+      const GRAY_BG = [226, 232, 240];
 
       const periodLabel = reportPeriod === 'custom'
         ? `Specific Day: ${reportDate}`
         : (PERIOD_LABELS[reportPeriod] ?? reportPeriod);
 
-      // ── 3. Page header (drawn once here; footer via didDrawPage) ─────
-      const drawPageHeader = () => {
+      // ── 4. Shared page-header drawing function ───────────────────────
+      const drawHeader = () => {
         doc.setFillColor(...ACCENT);
-        doc.rect(0, 0, pageW, 60, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(18);
-        doc.setFont('helvetica', 'bold');
-        doc.text('Juju Tzidat — Sales & Revenue Report', 36, 28);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
+        doc.rect(0, 0, pageW, 62, 'F');
+        doc.setTextColor(...WHITE);
+        setEthFont(17, 'normal');
+        doc.text('ጁጁ ጽዳት — Sales & Revenue Report', 36, 30);
+        setLatinFont(9);
         doc.text(
-          `Period: ${safePdfText(periodLabel)}   |   Generated: ${now.toLocaleString('en-US')}`,
-          36, 46
+          `Period: ${periodLabel}   |   Generated: ${now.toLocaleString('en-US')}`,
+          36, 50
         );
       };
-      drawPageHeader();
+      drawHeader();
 
-      // ── 4. KPI summary table ─────────────────────────────────────────
-      let cursorY = 80;
-
+      // ── 5. KPI summary table ─────────────────────────────────────────
+      let cursorY = 78;
       doc.setTextColor(...DARK);
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
+      setLatinFont(10, 'bold');
       doc.text('Summary', 36, cursorY);
       cursorY += 4;
 
@@ -129,36 +189,47 @@ export const ReportGenerator = ({ currentTimeFilter, currentCustomDate }) => {
           ['Units Sold',     String(kpi.items_sold   ?? 0)]
         ],
         theme: 'plain',
-        styles:       { fontSize: 10, cellPadding: 4, textColor: DARK },
+        styles:       { font: 'helvetica', fontSize: 10, cellPadding: 4, textColor: DARK },
         columnStyles: {
           0: { fontStyle: 'bold', textColor: MUTED, cellWidth: 140 },
           1: { fontStyle: 'bold' }
         },
-        tableWidth: 300,
+        tableWidth: 310,
         margin: { left: 36 }
       });
 
       cursorY = doc.lastAutoTable.finalY + 20;
 
-      // ── 5. Transactions log table ────────────────────────────────────
+      // ── 6. Transaction log table ─────────────────────────────────────
       doc.setTextColor(...DARK);
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
+      setLatinFont(10, 'bold');
       doc.text('Transaction Log', 36, cursorY);
       cursorY += 4;
 
+      const pageFooter = ({ pageNumber }) => {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...MUTED);
+        const total = doc.internal.getNumberOfPages();
+        doc.text(
+          `Page ${pageNumber} of ${total} — Juju Tzidat POS`,
+          pageW / 2, pageH - 16,
+          { align: 'center' }
+        );
+      };
+
       const txnRows = transactions.map((txn) => {
-        const totalUnits = (txn.items ?? []).reduce((s, i) => s + (i.quantity ?? 0), 0);
+        const totalUnits   = (txn.items ?? []).reduce((s, i) => s + (i.quantity ?? 0), 0);
         const itemsSummary = (txn.items ?? [])
-          .map((i) => `${safePdfText(i.product_name)} x${i.quantity}`)
+          .map((i) => `${i.product_name ?? ''} x${i.quantity}`)
           .join(', ');
         return [
-          safePdfText(txn.id),
+          txn.id ?? '',
           new Date(txn.timestamp).toLocaleString('en-US', {
             month: 'short', day: 'numeric', year: 'numeric',
             hour: '2-digit', minute: '2-digit'
           }),
-          safePdfText(txn.payment_method),
+          txn.payment_method ?? '',
           `${totalUnits} units`,
           `${Number(txn.total_revenue).toFixed(2)} ETB`,
           `${Number(txn.total_profit).toFixed(2)} ETB`,
@@ -174,55 +245,46 @@ export const ReportGenerator = ({ currentTimeFilter, currentCustomDate }) => {
           : [['No transactions found for this period.', '', '', '', '', '', '']],
         theme: 'striped',
         headStyles: {
+          font: 'helvetica',
           fillColor: ACCENT,
-          textColor: [255, 255, 255],
+          textColor: WHITE,
           fontStyle: 'bold',
           fontSize: 8
         },
-        bodyStyles:          { fontSize: 7.5, textColor: DARK },
-        alternateRowStyles:  { fillColor: STRIPE },
+        bodyStyles: {
+          font: FONT_NAME,      // ← Ethiopic font for item names in body
+          fontSize: 7.5,
+          textColor: DARK
+        },
+        alternateRowStyles: { fillColor: STRIPE },
         columnStyles: {
-          0: { cellWidth: 62,  fontStyle: 'bold' },
-          1: { cellWidth: 90 },
-          2: { cellWidth: 48 },
-          3: { cellWidth: 38 },
-          4: { cellWidth: 62, halign: 'right' },
-          5: { cellWidth: 62, halign: 'right', textColor: GREEN },
-          6: { cellWidth: 'auto' }
+          0: { font: 'helvetica', cellWidth: 60,  fontStyle: 'bold' },
+          1: { font: 'helvetica', cellWidth: 88 },
+          2: { font: 'helvetica', cellWidth: 48 },
+          3: { font: 'helvetica', cellWidth: 38 },
+          4: { font: 'helvetica', cellWidth: 62, halign: 'right' },
+          5: { font: 'helvetica', cellWidth: 62, halign: 'right', textColor: GREEN },
+          6: { cellWidth: 'auto' }   // items column — uses FONT_NAME from bodyStyles
         },
         margin: { left: 36, right: 36 },
-        didDrawPage: ({ pageNumber }) => {
-          // Footer on every page
-          doc.setFontSize(7.5);
-          doc.setTextColor(...MUTED);
-          const totalPages = doc.internal.getNumberOfPages();
-          doc.text(
-            `Page ${pageNumber} of ${totalPages} — Juju Tzidat POS`,
-            pageW / 2, pageH - 16,
-            { align: 'center' }
-          );
-        }
+        didDrawPage: pageFooter
       });
 
-      // ── 6. Per-transaction line-item breakdown (≤ 100 transactions) ──
+      // ── 7. Per-transaction line-item breakdown ───────────────────────
       if (transactions.length > 0 && transactions.length <= 100) {
         doc.addPage();
-
-        // Re-draw header on the new page
-        drawPageHeader();
+        drawHeader();
 
         let yDetail = 76;
         doc.setTextColor(...DARK);
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
+        setLatinFont(12, 'bold');
         doc.text('Itemized Line-Item Breakdown', 36, yDetail);
         yDetail += 14;
 
         for (const txn of transactions) {
-          // Check remaining page space; add new page if needed
           if (yDetail > pageH - 120) {
             doc.addPage();
-            drawPageHeader();
+            drawHeader();
             yDetail = 76;
           }
 
@@ -230,11 +292,11 @@ export const ReportGenerator = ({ currentTimeFilter, currentCustomDate }) => {
             const rev  = Number(item.selling_price) * (item.quantity ?? 0);
             const cost = Number(item.cost_price)    * (item.quantity ?? 0);
             return [
-              safePdfText(item.product_name),
+              item.product_name ?? '',
               String(item.quantity ?? 0),
-              `${Number(item.cost_price).toFixed(2)}`,
-              `${Number(item.selling_price).toFixed(2)}`,
-              `${rev.toFixed(2)}`,
+              Number(item.cost_price).toFixed(2),
+              Number(item.selling_price).toFixed(2),
+              rev.toFixed(2),
               `+${(rev - cost).toFixed(2)}`
             ];
           });
@@ -243,48 +305,57 @@ export const ReportGenerator = ({ currentTimeFilter, currentCustomDate }) => {
             startY: yDetail,
             head: [[
               {
-                content: `Order ${safePdfText(txn.id)}  |  ${new Date(txn.timestamp).toLocaleString('en-US')}  |  ${safePdfText(txn.payment_method)}`,
+                content: `Order ${txn.id}  |  ${new Date(txn.timestamp).toLocaleString('en-US')}  |  ${txn.payment_method}`,
                 colSpan: 6,
-                styles: { fillColor: [226, 232, 240], textColor: DARK, fontStyle: 'bold', fontSize: 7.5 }
+                styles: {
+                  font: 'helvetica',
+                  fillColor: GRAY_BG,
+                  textColor: DARK,
+                  fontStyle: 'bold',
+                  fontSize: 7.5
+                }
               }
             ]],
             body: [
-              ['Product Name', 'Qty', 'Cost/Unit', 'Sold/Unit', 'Revenue', 'Profit'],
+              // Sub-header row with column labels
+              [
+                { content: 'Product Name',  styles: { font: 'helvetica', fontStyle: 'bold', textColor: MUTED } },
+                { content: 'Qty',           styles: { font: 'helvetica', fontStyle: 'bold', textColor: MUTED } },
+                { content: 'Cost/Unit',     styles: { font: 'helvetica', fontStyle: 'bold', textColor: MUTED } },
+                { content: 'Sold/Unit',     styles: { font: 'helvetica', fontStyle: 'bold', textColor: MUTED } },
+                { content: 'Revenue',       styles: { font: 'helvetica', fontStyle: 'bold', textColor: MUTED } },
+                { content: 'Profit',        styles: { font: 'helvetica', fontStyle: 'bold', textColor: MUTED } }
+              ],
               ...lineRows
             ],
             theme: 'plain',
-            styles:       { fontSize: 7.5, cellPadding: 3, textColor: DARK },
-            headStyles:   { fontSize: 7.5 },
+            styles:       { font: FONT_NAME, fontSize: 7.5, cellPadding: 3, textColor: DARK },
             columnStyles: {
-              0: { cellWidth: 160 },
-              4: { halign: 'right' },
-              5: { halign: 'right', textColor: GREEN }
+              0: { cellWidth: 155 },
+              1: { font: 'helvetica' },
+              2: { font: 'helvetica', halign: 'right' },
+              3: { font: 'helvetica', halign: 'right' },
+              4: { font: 'helvetica', halign: 'right' },
+              5: { font: 'helvetica', halign: 'right', textColor: GREEN }
             },
             margin: { left: 36, right: 36 },
-            didDrawPage: ({ pageNumber }) => {
-              doc.setFontSize(7.5);
-              doc.setTextColor(...MUTED);
-              const totalPages = doc.internal.getNumberOfPages();
-              doc.text(
-                `Page ${pageNumber} of ${totalPages} — Juju Tzidat POS`,
-                pageW / 2, pageH - 16,
-                { align: 'center' }
-              );
-            }
+            didDrawPage: pageFooter
           });
 
           yDetail = doc.lastAutoTable.finalY + 8;
         }
       }
 
-      // ── 7. Save ──────────────────────────────────────────────────────
+      // ── 8. Save ──────────────────────────────────────────────────────
       const safeDate = reportPeriod === 'custom' ? reportDate : reportPeriod;
       const filename = `juju-report-${safeDate}-${now.toISOString().slice(0, 10)}.pdf`;
       doc.save(filename);
+      setStatusMsg('');
 
     } catch (err) {
       console.error('[ReportGenerator] PDF generation failed:', err);
-      setErrorMsg(err?.message || 'Unknown error. Check the browser console for details.');
+      setErrorMsg(err?.message || 'Unknown error — see browser console.');
+      setStatusMsg('');
     } finally {
       setIsGenerating(false);
     }
@@ -293,10 +364,11 @@ export const ReportGenerator = ({ currentTimeFilter, currentCustomDate }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+
         {/* Period selector */}
         <select
           value={reportPeriod}
-          onChange={(e) => { setReportPeriod(e.target.value); setErrorMsg(''); }}
+          onChange={(e) => { setReportPeriod(e.target.value); setErrorMsg(''); setStatusMsg(''); }}
           disabled={isGenerating}
           style={{
             padding: '0.55rem 0.9rem',
@@ -360,7 +432,7 @@ export const ReportGenerator = ({ currentTimeFilter, currentCustomDate }) => {
           {isGenerating ? (
             <>
               <Loader2 size={16} style={{ animation: 'spin 0.7s linear infinite' }} />
-              <span>Generating…</span>
+              <span>{statusMsg || 'Generating…'}</span>
             </>
           ) : (
             <>
@@ -371,7 +443,7 @@ export const ReportGenerator = ({ currentTimeFilter, currentCustomDate }) => {
         </button>
       </div>
 
-      {/* Inline error — more useful than a generic alert() */}
+      {/* Inline error */}
       {errorMsg && (
         <div style={{
           fontSize: '0.78rem',
@@ -380,10 +452,10 @@ export const ReportGenerator = ({ currentTimeFilter, currentCustomDate }) => {
           border: '1px solid rgba(220,38,38,0.2)',
           borderRadius: '6px',
           padding: '0.4rem 0.7rem',
-          maxWidth: '480px',
+          maxWidth: '520px',
           wordBreak: 'break-word'
         }}>
-          ⚠ PDF error: {errorMsg}
+          ⚠ {errorMsg}
         </div>
       )}
     </div>

@@ -317,9 +317,45 @@ img {
 .category-pills {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;          /* never wrap — scroll instead */
   gap: 0.5rem;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 0.25rem;
+  -webkit-overflow-scrolling: touch; /* momentum scroll on iOS */
+  /* Hide scrollbar visually on all browsers while keeping it functional */
+  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;   /* IE / Edge */
+}
+.category-pills::-webkit-scrollbar {
+  display: none;              /* Chrome / Safari / Opera */
+}
+
+/* Shared horizontal-scroll wrapper for data tables */
+.table-scroll-wrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  /* thin scrollbar on desktop so users know it's scrollable */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
+  /* never clip the table horizontally */
+  max-width: 100%;
+}
+.table-scroll-wrapper::-webkit-scrollbar {
+  height: 5px;
+}
+.table-scroll-wrapper::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 9999px;
+}
+.table-scroll-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Give tables a minimum usable width so columns never crush on mobile */
+.table-scroll-wrapper .custom-table {
+  min-width: 820px;
 }
 
 .pill-btn {
@@ -1104,6 +1140,18 @@ img {
 
   .nav-actions {
     flex: 0 0 auto;
+  }
+
+  /* Period filter bar stacks label above pills on mobile */
+  .period-filter-bar {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+
+  /* table-header stacks on small screens */
+  .table-header {
+    flex-direction: column;
+    align-items: flex-start !important;
   }
 
   /* ── Bottom Navigation Bar (mobile-only) ── */

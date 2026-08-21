@@ -203,12 +203,13 @@ export const SalesDashboard = () => {
 
       {/* Time Period Filter Bar */}
       <div
+        className="period-filter-bar"
         style={{
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '1rem',
+          gap: '0.75rem',
           background: 'var(--bg-card)',
           padding: '0.85rem 1.25rem',
           borderRadius: '16px',
@@ -217,12 +218,13 @@ export const SalesDashboard = () => {
           marginBottom: '1.5rem'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 }}>
           <Calendar size={20} color="var(--accent-primary)" />
-          <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>Revenue Time Period:</span>
+          <span style={{ fontWeight: 700, fontSize: '0.92rem', whiteSpace: 'nowrap' }}>Revenue Time Period:</span>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem' }}>
+        {/* Scrollable pills row — uses .category-pills for mobile scroll behaviour */}
+        <div className="category-pills" style={{ flex: '1 1 auto' }}>
           <button
             className={`pill-btn ${timeFilter === 'daily' ? 'active' : ''}`}
             onClick={() => setTimeFilter('daily')}
@@ -367,24 +369,26 @@ export const SalesDashboard = () => {
 
       {/* Transactions Log Table */}
       <div className="table-card" style={{ marginTop: '1.5rem' }}>
-        <div className="table-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        <div className="table-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 }}>
             <Receipt size={20} color="var(--accent-primary)" />
-            <h3 style={{ fontWeight: 700, fontSize: '1.05rem' }}>Sales Transactions Log</h3>
+            <h3 style={{ fontWeight: 700, fontSize: '1.05rem', whiteSpace: 'nowrap' }}>Sales Transactions Log</h3>
           </div>
 
-          {/* Payment Method Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Filter size={14} color="var(--text-muted)" />
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginRight: '0.3rem' }}>
-              Payment:
-            </span>
+          {/* Payment Method Filter — scrollable on mobile */}
+          <div className="category-pills" style={{ flex: '1 1 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+              <Filter size={14} color="var(--text-muted)" />
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                Payment:
+              </span>
+            </div>
             {['All', 'Bank', 'Telebirr', 'Cash'].map((method) => (
               <button
                 key={method}
                 className={`pill-btn ${selectedPaymentFilter === method ? 'active' : ''}`}
                 onClick={() => setSelectedPaymentFilter(method)}
-                style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem' }}
+                style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem', flexShrink: 0 }}
               >
                 {method}
               </button>
@@ -392,6 +396,8 @@ export const SalesDashboard = () => {
           </div>
         </div>
 
+        {/* Horizontal scroll wrapper — keeps all columns visible on mobile */}
+        <div className="table-scroll-wrapper">
         <table className="custom-table">
           <thead>
             <tr>
@@ -472,6 +478,7 @@ export const SalesDashboard = () => {
             )}
           </tbody>
         </table>
+        </div>{/* end table-scroll-wrapper */}
       </div>
 
       {/* Load More Transactions */}
