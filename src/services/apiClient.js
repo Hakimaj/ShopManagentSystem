@@ -61,6 +61,15 @@ export async function apiRequest(endpoint, options = {}) {
       } else {
         errorMsg = `API request failed with status ${response.status}`;
       }
+      
+      // Log the full error response for debugging
+      console.error('API Error Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: response.url,
+        data: data
+      });
+      
       throw new ApiError(errorMsg, response.status, data);
     }
 

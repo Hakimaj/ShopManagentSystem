@@ -101,9 +101,9 @@ img {
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
   height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  overflow: hidden;          /* only the POS layout clips at viewport — other tabs flow */
 }
 
 /* Header Navbar */
@@ -237,11 +237,20 @@ img {
   display: flex;
   padding: 1.25rem;
   gap: 1.25rem;
-  overflow: hidden;
+  overflow: hidden;          /* POS: sub-regions manage their own scroll */
   overflow-x: hidden;
   height: calc(100vh - 65px);
   width: 100%;
   max-width: 100%;
+}
+
+/* Non-POS tabs (Inventory, Sales, Expenses, Users) — full vertical scroll.
+   height:auto + overflow-y:auto lets the page grow and scroll naturally. */
+.main-content.scrollable-tab {
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: calc(100vh - 65px);  /* fixed height so content scrolls within the panel */
+  align-items: flex-start;     /* children don't stretch to viewport height */
 }
 
 /* DESKTOP SPLIT SCREEN POS LAYOUT: 70% LEFT (CATALOG) / 30% RIGHT (CART) */
@@ -282,14 +291,34 @@ img {
   position: sticky;
   top: 0;
   z-index: 10;
-  /* Prevent the sticky header from overflowing its scroll parent */
   min-width: 0;
-  overflow: hidden;   /* clips any rogue overflow from inner elements */
+  /* Do NOT use overflow:hidden here — it clips the pill buttons' shadows
+     and bottom padding, making them appear half-cut on Windows/desktop */
+  overflow: visible;
 }
 
 /* The category-pills row inside catalog-header must fill full width */
 .catalog-header .category-pills {
   width: 100%;
+}
+
+/* Give the pills row a small vertical padding so button borders/shadows
+   are never clipped by a parent overflow:hidden ancestor */
+.category-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: visible;            /* ← CRITICAL: never clip button top/bottom */
+  padding: 10px 4px;              /* breathing room so shadows aren't cut */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  width: 100%;
+}
+.category-pills::-webkit-scrollbar {
+  display: none;
 }
 
 .search-box {
@@ -322,36 +351,20 @@ img {
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-.category-pills {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;          /* never wrap — scroll instead */
-  gap: 0.5rem;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 0.25rem;
-  -webkit-overflow-scrolling: touch; /* momentum scroll on iOS */
-  /* Hide scrollbar visually on all browsers while keeping it functional */
-  scrollbar-width: none;      /* Firefox */
-  -ms-overflow-style: none;   /* IE / Edge */
-}
-.category-pills::-webkit-scrollbar {
-  display: none;              /* Chrome / Safari / Opera */
-}
-
 /* Shared horizontal-scroll wrapper for data tables */
 .table-scroll-wrapper {
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: auto;                /* Step 3/4: enable vertical scroll */
+  max-height: 68vh;                /* cap height so content scrolls within the card */
   -webkit-overflow-scrolling: touch;
-  /* thin scrollbar on desktop so users know it's scrollable */
+  /* thin scrollbar on desktop */
   scrollbar-width: thin;
   scrollbar-color: var(--border-light) transparent;
-  /* never clip the table horizontally */
   max-width: 100%;
 }
 .table-scroll-wrapper::-webkit-scrollbar {
   height: 5px;
+  width: 5px;                      /* also show slim vertical scrollbar */
 }
 .table-scroll-wrapper::-webkit-scrollbar-thumb {
   background: var(--border-light);
@@ -397,9 +410,12 @@ img {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr));
   gap: 1rem;
-  padding-bottom: 1rem;
+  padding-bottom: 1.5rem;      /* last row not hidden under cart bar on desktop */
   width: 100%;
-  overflow: hidden;
+  /* Enable scrolling within the product grid for long product lists */
+  max-height: calc(100vh - 250px); /* Account for header, search, category filters */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .product-card {
@@ -837,13 +853,17 @@ img {
 }
 
 /* View Containers */
+/* View container — used by Inventory, Sales, Expenses, Users tabs.
+   The parent .main-content.scrollable-tab is the scroll root.
+   This container just stacks children vertically with no independent scroll. */
 .view-container {
   width: 100%;
-  height: 100%;
-  overflow-y: auto;
+  min-height: 100%;            /* fills the scrollable parent */
+  overflow: visible;           /* do NOT create a nested scroll context */
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  padding-bottom: 2rem;
 }
 
 .view-header {
@@ -933,8 +953,9 @@ img {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 14px;
-  overflow: hidden;
+  overflow: hidden;              /* clips rounded corners cleanly */
   box-shadow: var(--shadow-sm);
+  /* The scroll wrapper inside handles its own overflow — this clips the border-radius only */
 }
 
 .table-header {
@@ -965,6 +986,10 @@ img {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-bottom: 1px solid var(--border-color);
+  /* Sticky header — stays visible as user scrolls down through many rows */
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 .custom-table td {
@@ -1212,6 +1237,12 @@ img {
     padding-bottom: 5rem; /* reserve space for fixed bottom nav */
   }
 
+  .main-content.scrollable-tab {
+    padding-bottom: 5rem;
+    height: calc(100vh - 56px);   /* 56px = mobile bottom nav height */
+    overflow-y: auto;
+  }
+
   .pos-layout {
     flex-direction: column;
   }
@@ -1237,6 +1268,16 @@ img {
   /* Show floating mobile cart button bar */
   .mobile-cart-bar {
     display: block;
+  }
+
+  /* Tables on mobile — shorter max-height so they don't consume the whole screen */
+  .table-scroll-wrapper {
+    max-height: 50vh;
+  }
+
+  /* Product grid on mobile - smaller max height to account for mobile header/nav */
+  .product-grid {
+    max-height: calc(100vh - 320px); /* More space for mobile header/nav */
   }
 }
 

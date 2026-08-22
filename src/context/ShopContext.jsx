@@ -44,12 +44,15 @@ const normalizeTxn = (t) => ({
   paymentMethod: t.payment_method,
   totalRevenue: Number(t.total_revenue),
   totalProfit: Number(t.total_profit),
-  items: t.items.map((i) => ({
+  // status may be null for pre-migration rows — default to COMPLETED
+  status: t.status || 'COMPLETED',
+  // items may be absent on minimal API responses — guard with empty array
+  items: (t.items || []).map((i) => ({
     id: i.product_id,
-    name: i.product_name,
-    quantity: i.quantity,
-    costPrice: Number(i.cost_price),
-    sellingPrice: Number(i.selling_price)
+    name: i.product_name || i.name || 'Unknown',
+    quantity: i.quantity ?? 0,
+    costPrice: Number(i.cost_price ?? 0),
+    sellingPrice: Number(i.selling_price ?? 0)
   }))
 });
 

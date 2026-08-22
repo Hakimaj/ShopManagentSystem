@@ -6,13 +6,15 @@ import { POSCatalog } from './components/POSCatalog';
 import { CartPanel } from './components/CartPanel';
 import { InventoryManager } from './components/InventoryManager';
 import { SalesDashboard } from './components/SalesDashboard';
+import { ExpensesManager } from './components/ExpensesManager';
+import { UserManager } from './components/UserManager';
 import { TransactionModal } from './components/TransactionModal';
 import { LoginModal } from './components/LoginModal';
 import { ShoppingCart, Sparkles } from 'lucide-react';
 
 const AppContent = () => {
   const { activeTab, cart } = useShop();
-  const { isAuthenticated, authLoading } = useAuth();
+  const { isAuthenticated, authLoading, currentUser } = useAuth();
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
   const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -67,11 +69,10 @@ const AppContent = () => {
     <div className="app-container">
       <Navbar />
 
-      {/* Login modal — shown as an overlay when not authenticated. 
-          POS catalog is still rendered behind it (blurred) per design decision. */}
+      {/* Login modal — shown as an overlay when not authenticated */}
       {!isAuthenticated && <LoginModal />}
 
-      <main className="main-content">
+      <main className={`main-content${activeTab !== 'pos' ? ' scrollable-tab' : ''}`}>
         {activeTab === 'pos' && (
           <div className="pos-layout">
             <POSCatalog />
@@ -118,6 +119,14 @@ const AppContent = () => {
 
         {activeTab === 'dashboard' && (
           isAuthenticated ? <SalesDashboard /> : null
+        )}
+
+        {activeTab === 'expenses' && (
+          isAuthenticated ? <ExpensesManager /> : null
+        )}
+
+        {activeTab === 'users' && (
+          isAuthenticated && currentUser?.role === 'ADMIN' ? <UserManager /> : null
         )}
       </main>
 

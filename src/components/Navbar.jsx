@@ -5,6 +5,8 @@ import {
   ShoppingBag,
   Package,
   TrendingUp,
+  Receipt,
+  Users,
   Sun,
   Moon,
   ShieldCheck,
@@ -16,15 +18,18 @@ export const Navbar = () => {
   const { activeTab, setActiveTab, theme, toggleTheme, cart } = useShop();
   const { currentUser, isAuthenticated, logout } = useAuth();
 
+  const isAdmin = currentUser?.role === 'ADMIN';
   const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-
   const roleLabel = currentUser?.role === 'ADMIN' ? 'Admin' : 'Staff';
   const displayName = currentUser?.full_name || currentUser?.username || 'User';
 
   const navItems = [
-    { id: 'pos', icon: <ShoppingBag size={20} />, label: 'POS Terminal', badge: cartItemsCount > 0 ? cartItemsCount : null },
-    { id: 'inventory', icon: <Package size={20} />, label: 'Inventory Stock', badge: null },
-    { id: 'dashboard', icon: <TrendingUp size={20} />, label: 'Sales & Revenue', badge: null }
+    { id: 'pos',       icon: <ShoppingBag size={20} />, label: 'POS Terminal',    badge: cartItemsCount > 0 ? cartItemsCount : null },
+    { id: 'inventory', icon: <Package size={20} />,     label: 'Inventory',       badge: null },
+    { id: 'dashboard', icon: <TrendingUp size={20} />,  label: 'Sales & Revenue', badge: null },
+    { id: 'expenses',  icon: <Receipt size={20} />,     label: 'Expenses',        badge: null },
+    // Users tab — Admin only
+    ...(isAdmin ? [{ id: 'users', icon: <Users size={20} />, label: 'Users', badge: null }] : []),
   ];
 
   return (

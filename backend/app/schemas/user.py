@@ -12,6 +12,13 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6, max_length=100)
 
+class UserUpdate(BaseModel):
+    """Admin-only: update username and/or password for any user."""
+    username: str | None = Field(None, min_length=3, max_length=50)
+    full_name: str | None = Field(None, max_length=100)
+    password: str | None = Field(None, min_length=6, max_length=100)
+    is_active: bool | None = None
+
 class UserResponse(UserBase):
     id: int
     created_at: datetime

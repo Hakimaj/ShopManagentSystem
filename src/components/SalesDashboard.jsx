@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useShop } from '../context/ShopContext';
 import { dashboardApi } from '../services/dashboardApi';
+import { transactionsApi } from '../services/transactionsApi';
 import { ErrorBanner } from './ErrorBanner';
 import { ReportGenerator } from './ReportGenerator';
 import {
   DollarSign,
   TrendingUp,
+  TrendingDown,
   Receipt,
   Package,
   Filter,
@@ -15,7 +17,8 @@ import {
   Banknote,
   Eye,
   Clock,
-  Inbox
+  Inbox,
+  RotateCcw
 } from 'lucide-react';
 
 export const SalesDashboard = () => {
@@ -38,6 +41,28 @@ export const SalesDashboard = () => {
   const [backendKpi, setBackendKpi] = useState(null);
   const [isLoadingKpi, setIsLoadingKpi] = useState(false);
   const [kpiError, setKpiError] = useState(null);
+
+  // Refund state (Step 6)
+  const [refundingId, setRefundingId] = useState(null);
+  const [refundError, setRefundError] = useState('');
+
+  const handleRefund = async (txn) => {
+    if (!window.confirm(
+      `Refund order ${txn.id}?\n\nThis will:\n• Return all sold items back to stock\n• Mark this transaction as REFUNDED\n\nThis action cannot be undone.`
+    )) return;
+
+    setRefundingId(txn.id);
+    setRefundError('');
+    try {
+      await transactionsApi.refund(txn.id);
+      // Reload everything to get fresh stock + updated transaction status
+      await loadData();
+    } catch (e) {
+      setRefundError(e.message || 'Refund failed. Please try again.');
+    } finally {
+      setRefundingId(null);
+    }
+  };
 
   // Helper date matching functions
   const isSameDay = (isoDateString, targetYmd) => {
@@ -140,6 +165,10 @@ export const SalesDashboard = () => {
         (sum, t) => sum + t.items.reduce((iSum, item) => iSum + item.quantity, 0),
         0
       );
+
+  // Step 2: expenses & net profit from backend KPI
+  const periodExpenses = backendKpi ? Number(backendKpi.total_expenses ?? 0) : 0;
+  const periodNetProfit = backendKpi ? Number(backendKpi.net_profit ?? periodProfit) : periodProfit;
 
   const getPaymentIcon = (method) => {
     switch (method) {
@@ -328,7 +357,7 @@ export const SalesDashboard = () => {
                   <DollarSign size={24} />
                 </div>
                 <div className="kpi-meta">
-                  <span className="kpi-label">Filtered Revenue</span>
+                  <span className="kpi-label">Total Revenue</span>
                   <span className="kpi-value">{periodRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB</span>
                 </div>
               </div>
@@ -338,8 +367,35 @@ export const SalesDashboard = () => {
                   <TrendingUp size={24} />
                 </div>
                 <div className="kpi-meta">
-                  <span className="kpi-label">Filtered Net Profit</span>
+                  <span className="kpi-label">Gross Profit</span>
                   <span className="kpi-value">+{periodProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB</span>
+                </div>
+              </div>
+
+              <div className="kpi-card">
+                <div className="kpi-icon" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  <TrendingDown size={24} />
+                </div>
+                <div className="kpi-meta">
+                  <span className="kpi-label">Total Expenses</span>
+                  <span className="kpi-value" style={{ color: 'var(--danger)' }}>
+                    -{periodExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB
+                  </span>
+                </div>
+              </div>
+
+              <div className="kpi-card">
+                <div className="kpi-icon" style={{
+                  background: periodNetProfit >= 0 ? 'var(--success-bg)' : 'var(--danger-bg)',
+                  color: periodNetProfit >= 0 ? 'var(--success)' : 'var(--danger)'
+                }}>
+                  <TrendingUp size={24} />
+                </div>
+                <div className="kpi-meta">
+                  <span className="kpi-label">Net Profit</span>
+                  <span className="kpi-value" style={{ color: periodNetProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                    {periodNetProfit >= 0 ? '+' : ''}{periodNetProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB
+                  </span>
                 </div>
               </div>
 
@@ -368,6 +424,15 @@ export const SalesDashboard = () => {
       </div>
 
       {/* Transactions Log Table */}
+      {refundError && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--danger-bg)',
+          color: 'var(--danger)', padding: '0.7rem 1rem', borderRadius: '10px',
+          fontSize: '0.85rem', fontWeight: 600, marginTop: '0.5rem' }}>
+          ⚠ {refundError}
+          <button onClick={() => setRefundError('')} style={{ marginLeft: 'auto', background: 'none',
+            border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: '1rem' }}>✕</button>
+        </div>
+      )}
       <div className="table-card" style={{ marginTop: '1.5rem' }}>
         <div className="table-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 }}>
@@ -407,7 +472,7 @@ export const SalesDashboard = () => {
               <th>Items Sold</th>
               <th>Revenue</th>
               <th>Net Profit</th>
-              <th style={{ textAlign: 'right' }}>Details</th>
+              <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -459,18 +524,55 @@ export const SalesDashboard = () => {
                       {totalUnits} items ({txn.items.map((i) => `${i.name} (${i.quantity})`).join(', ')})
                     </td>
                     <td style={{ fontWeight: 800 }}>{txn.totalRevenue.toFixed(2)} ETB</td>
-                    <td style={{ fontWeight: 800, color: 'var(--success)' }}>
-                      +{txn.totalProfit.toFixed(2)} ETB
+                    <td style={{ fontWeight: 800, color: txn.status === 'REFUNDED' ? 'var(--text-muted)' : 'var(--success)' }}>
+                      {txn.status === 'REFUNDED'
+                        ? <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}>
+                            +{txn.totalProfit.toFixed(2)} ETB
+                          </span>
+                        : `+${txn.totalProfit.toFixed(2)} ETB`
+                      }
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <button
-                        className="icon-btn"
-                        style={{ display: 'inline-flex', width: 32, height: 32 }}
-                        onClick={() => setSelectedTxnDetail(txn)}
-                        title="View Line Item Breakdown"
-                      >
-                        <Eye size={16} />
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                        {/* Status badge */}
+                        {txn.status === 'REFUNDED' && (
+                          <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.5rem',
+                            borderRadius: '6px', background: 'var(--warning-bg)', color: 'var(--warning)',
+                            border: '1px solid var(--warning)', whiteSpace: 'nowrap' }}>
+                            REFUNDED
+                          </span>
+                        )}
+                        {/* Eye details button */}
+                        <button
+                          className="icon-btn"
+                          style={{ display: 'inline-flex', width: 32, height: 32 }}
+                          onClick={() => setSelectedTxnDetail(txn)}
+                          title="View Details"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        {/* Refund button — only for COMPLETED transactions */}
+                        {txn.status !== 'REFUNDED' && (
+                          <button
+                            className="icon-btn"
+                            style={{
+                              display: 'inline-flex', width: 32, height: 32,
+                              color: 'var(--warning)',
+                              opacity: refundingId === txn.id ? 0.5 : 1
+                            }}
+                            onClick={() => handleRefund(txn)}
+                            disabled={refundingId === txn.id}
+                            title="Refund this transaction & restore stock"
+                          >
+                            {refundingId === txn.id
+                              ? <span style={{ width: 14, height: 14, border: '2px solid var(--warning)',
+                                  borderTopColor: 'transparent', borderRadius: '50%',
+                                  animation: 'spin 0.7s linear infinite', display: 'inline-block' }}/>
+                              : <RotateCcw size={15} />
+                            }
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
