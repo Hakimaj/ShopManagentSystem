@@ -22,5 +22,9 @@ export const transactionsApi = {
 
   get: async (id) => {
     return apiRequest(`/transactions/${id}`);
+  },
+
+  refund: async (id) => {
+    return apiRequest(`/transactions/${id}/refund`, { method: 'POST' });
   }
 };

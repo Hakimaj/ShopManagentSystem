@@ -67,7 +67,8 @@ class TransactionService:
             "payment_method": checkout_in.payment_method,
             "total_revenue": total_revenue,
             "total_profit": total_profit,
-            "user_id": user_id
+            "user_id": user_id,
+            "status": "COMPLETED"   # explicit — never rely on DB column default
         }
 
         # 3. Save atomically and return
@@ -109,16 +110,70 @@ class TransactionService:
         custom_date: str | None = None,
         payment_method: str | None = None
     ) -> dict:
+        import logging
+        logger = logging.getLogger("transaction_service")
+
         start_date, end_date = self._get_date_range(period, custom_date)
         kpi = self.repository.get_dashboard_aggregates(
             start_date=start_date,
             end_date=end_date,
             payment_method=payment_method
         )
+
+        # Fetch expenses for the same period.
+        # Wrapped in a broad try/except so that if the expenses table doesn't
+        # exist yet (migration pending) or any other DB error occurs, the
+        # dashboard still returns valid data — it just shows 0 for expenses.
+        total_expenses = Decimal("0.00")
+        try:
+            from app.repositories.expense_repository import ExpenseRepository
+            exp_repo = ExpenseRepository(self.db)
+            start_d = start_date.date() if start_date else None
+            end_d   = end_date.date()   if end_date   else None
+            total_expenses = exp_repo.get_total(start_date=start_d, end_date=end_d)
+        except Exception as exc:
+            logger.warning(
+                f"Dashboard: could not fetch expenses (table may not exist yet): {exc}"
+            )
+            total_expenses = Decimal("0.00")
+
+        gross_profit = kpi["filtered_profit"]
+        net_profit   = gross_profit - total_expenses
+
+        kpi["total_expenses"] = total_expenses
+        kpi["net_profit"]     = net_profit
+
         return {
             "kpi": kpi,
             "period": period
         }
+
+    def process_refund(self, txn_id: str) -> Transaction:
+        """
+        Reverses a completed transaction:
+        - Restores product stock for all line items
+        - Marks transaction status as REFUNDED
+        Already-refunded transactions are rejected.
+        """
+        txn = self.repository.get_by_id(txn_id)
+        if not txn:
+            raise EntityNotFoundException(f"Transaction '{txn_id}' not found.")
+
+        if getattr(txn, "status", "COMPLETED") == "REFUNDED":
+            raise BusinessValidationException("This transaction has already been refunded.")
+
+        # Restore stock for each item
+        for item in txn.items:
+            if item.product_id:
+                product = self.product_repository.get_by_id(item.product_id)
+                if product:
+                    product.current_stock += item.quantity
+
+        # Mark as refunded
+        txn.status = "REFUNDED"
+        self.db.commit()
+        self.db.refresh(txn)
+        return txn
 
     def _get_date_range(self, period: str, custom_date: str | None) -> tuple[datetime | None, datetime | None]:
         now = datetime.now(timezone.utc)
@@ -131,6 +186,9 @@ class TransactionService:
             return start, None
         elif period == "half_year":
             start = now - timedelta(days=180)
+            return start, None
+        elif period == "yearly":
+            start = now - timedelta(days=365)
             return start, None
         elif period == "custom" and custom_date:
             try:

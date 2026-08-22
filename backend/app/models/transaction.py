@@ -14,6 +14,13 @@ class Transaction(Base):
     total_revenue: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     total_profit: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # 'COMPLETED' or 'REFUNDED' — added additively via init_db startup migration.
+    # Python-side default means the ORM never sends NULL; the column default in the
+    # DB covers existing rows created before this column was added.
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="COMPLETED",
+        server_default="COMPLETED", index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

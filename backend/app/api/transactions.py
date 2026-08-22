@@ -63,3 +63,25 @@ def get_transaction(
         return TransactionResponse.model_validate(txn)
     except EntityNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
+
+
+@router.post("/{txn_id}/refund", response_model=TransactionResponse)
+def refund_transaction(
+    txn_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_staff_or_admin)
+):
+    """
+    Reverse a completed transaction:
+    - Restores stock for all sold items.
+    - Marks transaction as REFUNDED.
+    Only COMPLETED transactions can be refunded.
+    """
+    service = TransactionService(db)
+    try:
+        txn = service.process_refund(txn_id)
+        return TransactionResponse.model_validate(txn)
+    except EntityNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
+    except BusinessValidationException as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)

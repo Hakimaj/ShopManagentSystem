@@ -15,7 +15,7 @@ from app.core.exceptions import (
     BusinessValidationException
 )
 from app.db.init_db import init_db
-from app.api import endpoints, auth, categories, products, transactions, dashboard, uploads
+from app.api import endpoints, auth, categories, products, transactions, dashboard, uploads, expenses, users
 
 # Setup application logging
 setup_logging()
@@ -104,6 +104,8 @@ app.include_router(products.router, prefix=settings.API_STR)
 app.include_router(transactions.router, prefix=settings.API_STR)
 app.include_router(dashboard.router, prefix=settings.API_STR)
 app.include_router(uploads.router, prefix=settings.API_STR)
+app.include_router(expenses.router, prefix=settings.API_STR)
+app.include_router(users.router, prefix=settings.API_STR)
 
 # Also mount without /api prefix to support direct function routing on Vercel
 app.include_router(endpoints.router)
@@ -113,3 +115,5 @@ app.include_router(products.router)
 app.include_router(transactions.router)
 app.include_router(dashboard.router)
 app.include_router(uploads.router)
+app.include_router(expenses.router)
+app.include_router(users.router)

@@ -101,9 +101,9 @@ img {
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
   height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  overflow: hidden;          /* only the POS layout clips at viewport — other tabs flow */
 }
 
 /* Header Navbar */
@@ -237,11 +237,20 @@ img {
   display: flex;
   padding: 1.25rem;
   gap: 1.25rem;
-  overflow: hidden;
+  overflow: hidden;          /* POS: sub-regions manage their own scroll */
   overflow-x: hidden;
   height: calc(100vh - 65px);
   width: 100%;
   max-width: 100%;
+}
+
+/* Non-POS tabs (Inventory, Sales, Expenses, Users) — full vertical scroll.
+   height:auto + overflow-y:auto lets the page grow and scroll naturally. */
+.main-content.scrollable-tab {
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: calc(100vh - 65px);  /* fixed height so content scrolls within the panel */
+  align-items: flex-start;     /* children don't stretch to viewport height */
 }
 
 /* DESKTOP SPLIT SCREEN POS LAYOUT: 70% LEFT (CATALOG) / 30% RIGHT (CART) */
@@ -282,6 +291,34 @@ img {
   position: sticky;
   top: 0;
   z-index: 10;
+  min-width: 0;
+  /* Do NOT use overflow:hidden here — it clips the pill buttons' shadows
+     and bottom padding, making them appear half-cut on Windows/desktop */
+  overflow: visible;
+}
+
+/* The category-pills row inside catalog-header must fill full width */
+.catalog-header .category-pills {
+  width: 100%;
+}
+
+/* Give the pills row a small vertical padding so button borders/shadows
+   are never clipped by a parent overflow:hidden ancestor */
+.category-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: visible;            /* ← CRITICAL: never clip button top/bottom */
+  padding: 10px 4px;              /* breathing room so shadows aren't cut */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  width: 100%;
+}
+.category-pills::-webkit-scrollbar {
+  display: none;
 }
 
 .search-box {
@@ -314,16 +351,36 @@ img {
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-.category-pills {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+/* Shared horizontal-scroll wrapper for data tables */
+.table-scroll-wrapper {
   overflow-x: auto;
-  padding-bottom: 0.25rem;
+  overflow-y: auto;                /* Step 3/4: enable vertical scroll */
+  max-height: 68vh;                /* cap height so content scrolls within the card */
+  -webkit-overflow-scrolling: touch;
+  /* thin scrollbar on desktop */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
+  max-width: 100%;
+}
+.table-scroll-wrapper::-webkit-scrollbar {
+  height: 5px;
+  width: 5px;                      /* also show slim vertical scrollbar */
+}
+.table-scroll-wrapper::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 9999px;
+}
+.table-scroll-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Give tables a minimum usable width so columns never crush on mobile */
+.table-scroll-wrapper .custom-table {
+  min-width: 820px;
 }
 
 .pill-btn {
-  padding: 0.45rem 1rem;
+  padding: 0.5rem 1.1rem;        /* slightly more room — especially for longer Amharic names */
   border-radius: 9999px;
   border: 1px solid var(--border-color);
   background: var(--bg-card);
@@ -331,7 +388,9 @@ img {
   font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
-  white-space: nowrap;
+  white-space: nowrap;           /* never line-wrap inside a pill */
+  flex-shrink: 0;                /* never compress inside a flex scroll row */
+  min-width: max-content;        /* always wide enough for its text content */
   transition: all 0.2s ease;
 }
 
@@ -351,9 +410,12 @@ img {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr));
   gap: 1rem;
-  padding-bottom: 1rem;
+  padding-bottom: 1.5rem;      /* last row not hidden under cart bar on desktop */
   width: 100%;
-  overflow: hidden;
+  /* Enable scrolling within the product grid for long product lists */
+  max-height: calc(100vh - 250px); /* Account for header, search, category filters */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .product-card {
@@ -738,6 +800,11 @@ img {
   z-index: 50;
 }
 
+/* Bottom nav — hidden on desktop, shown via media query on mobile */
+.mobile-bottom-nav {
+  display: none;
+}
+
 .mobile-cart-btn {
   width: 100%;
   padding: 0.9rem 1.25rem;
@@ -786,13 +853,17 @@ img {
 }
 
 /* View Containers */
+/* View container — used by Inventory, Sales, Expenses, Users tabs.
+   The parent .main-content.scrollable-tab is the scroll root.
+   This container just stacks children vertically with no independent scroll. */
 .view-container {
   width: 100%;
-  height: 100%;
-  overflow-y: auto;
+  min-height: 100%;            /* fills the scrollable parent */
+  overflow: visible;           /* do NOT create a nested scroll context */
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  padding-bottom: 2rem;
 }
 
 .view-header {
@@ -882,8 +953,9 @@ img {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 14px;
-  overflow: hidden;
+  overflow: hidden;              /* clips rounded corners cleanly */
   box-shadow: var(--shadow-sm);
+  /* The scroll wrapper inside handles its own overflow — this clips the border-radius only */
 }
 
 .table-header {
@@ -892,6 +964,10 @@ img {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;               /* search box + pills stack on narrow screens */
+  gap: 0.75rem;
+  /* Prevent any direct children from overflowing the card */
+  min-width: 0;
 }
 
 .custom-table {
@@ -910,6 +986,10 @@ img {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-bottom: 1px solid var(--border-color);
+  /* Sticky header — stays visible as user scrolls down through many rows */
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 .custom-table td {
@@ -1070,10 +1150,18 @@ img {
   border-color: var(--accent-primary);
 }
 
-/* MOBILE-FIRST RESPONSIVE MEDIA QUERIES (<= 1024px) */
-@media (max-width: 1024px) {
+/* MOBILE-FIRST RESPONSIVE MEDIA QUERIES (<= 768px) */
+@media (max-width: 768px) {
+  /* ── Navbar: stack brand + actions, hide center tabs ── */
   .navbar {
-    padding: 0.75rem 1rem;
+    padding: 0.6rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .brand-section {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   
   .brand-title {
@@ -1084,8 +1172,75 @@ img {
     display: none;
   }
 
+  /* Hide the desktop center nav-tabs pill bar on mobile */
+  .nav-tabs {
+    display: none;
+  }
+
+  .nav-actions {
+    flex: 0 0 auto;
+  }
+
+  /* Period filter bar stacks label above pills on mobile */
+  .period-filter-bar {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+
+  /* table-header stacks on small screens */
+  .table-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+
+  /* ── Bottom Navigation Bar (mobile-only) ── */
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  .mobile-bottom-nav .tab-btn {
+    flex: 1;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.55rem 0.25rem;
+    border-radius: 0;
+    font-size: 0.7rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    justify-content: center;
+    min-height: 56px;
+  }
+
+  .mobile-bottom-nav .tab-btn.active {
+    color: var(--accent-primary);
+    background: var(--accent-glow);
+    box-shadow: none;
+    border: none;
+  }
+
+  .mobile-bottom-nav .tab-btn svg {
+    flex-shrink: 0;
+  }
+
+  /* Push main content up so it's not hidden behind the bottom nav */
   .main-content {
     padding: 0.75rem;
+    padding-bottom: 5rem; /* reserve space for fixed bottom nav */
+  }
+
+  .main-content.scrollable-tab {
+    padding-bottom: 5rem;
+    height: calc(100vh - 56px);   /* 56px = mobile bottom nav height */
+    overflow-y: auto;
   }
 
   .pos-layout {
@@ -1113,6 +1268,16 @@ img {
   /* Show floating mobile cart button bar */
   .mobile-cart-bar {
     display: block;
+  }
+
+  /* Tables on mobile — shorter max-height so they don't consume the whole screen */
+  .table-scroll-wrapper {
+    max-height: 50vh;
+  }
+
+  /* Product grid on mobile - smaller max height to account for mobile header/nav */
+  .product-grid {
+    max-height: calc(100vh - 320px); /* More space for mobile header/nav */
   }
 }
 

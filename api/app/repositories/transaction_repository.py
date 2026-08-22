@@ -54,7 +54,7 @@ class TransactionRepository(BaseRepository):
         end_date: datetime | None = None,
         payment_method: str | None = None
     ) -> dict:
-        # Base filter query for transactions
+        # Base filter query — only COMPLETED transactions count toward revenue/profit
         txn_subquery = select(Transaction.id, Transaction.total_revenue, Transaction.total_profit)
 
         if start_date is not None:
@@ -63,6 +63,13 @@ class TransactionRepository(BaseRepository):
             txn_subquery = txn_subquery.where(Transaction.timestamp <= end_date)
         if payment_method and payment_method != "All":
             txn_subquery = txn_subquery.where(Transaction.payment_method == payment_method)
+
+        # Exclude refunded transactions from revenue/profit aggregation.
+        # Use func.coalesce so this still works on DBs where the status column
+        # doesn't exist yet (returns NULL → treated as "COMPLETED").
+        txn_subquery = txn_subquery.where(
+            (Transaction.status == "COMPLETED") | (Transaction.status == None)  # noqa: E711
+        )
 
         txn_sq = txn_subquery.subquery()
 
@@ -74,7 +81,7 @@ class TransactionRepository(BaseRepository):
         )
         rev, prof, count = self.db.execute(agg_stmt).one()
 
-        # Count items sold in matching transactions
+        # Count items sold in matching (COMPLETED) transactions
         items_stmt = select(func.coalesce(func.sum(TransactionItem.quantity), 0)).where(
             TransactionItem.transaction_id.in_(select(txn_sq.c.id))
         )

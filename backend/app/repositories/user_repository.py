@@ -16,9 +16,21 @@ class UserRepository(BaseRepository):
         stmt = select(User).where(User.email == email)
         return self.db.execute(stmt).scalar_one_or_none()
 
+    def list_all(self) -> list[User]:
+        stmt = select(User).order_by(User.id.asc())
+        return list(self.db.execute(stmt).scalars().all())
+
     def create(self, user_data: dict) -> User:
         user = User(**user_data)
         self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def update(self, user: User, data: dict) -> User:
+        for key, value in data.items():
+            if hasattr(user, key) and value is not None:
+                setattr(user, key, value)
         self.db.commit()
         self.db.refresh(user)
         return user

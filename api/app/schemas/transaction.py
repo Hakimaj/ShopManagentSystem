@@ -30,9 +30,16 @@ class TransactionResponse(BaseModel):
     payment_method: str
     total_revenue: Decimal
     total_profit: Decimal
+    # status may be None for rows that existed before the column was added —
+    # we default to "COMPLETED" so old transactions never cause a 500.
+    status: str | None = "COMPLETED"
     items: list[TransactionItemResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+    @property
+    def display_status(self) -> str:
+        return self.status or "COMPLETED"
 
 class TransactionListResponse(BaseModel):
     items: list[TransactionResponse]
@@ -46,6 +53,8 @@ class DashboardKPI(BaseModel):
     filtered_profit: Decimal
     orders_count: int
     items_sold: int
+    total_expenses: Decimal = Decimal("0.00")
+    net_profit: Decimal = Decimal("0.00")
 
 class DashboardSummaryResponse(BaseModel):
     kpi: DashboardKPI

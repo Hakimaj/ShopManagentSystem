@@ -9,22 +9,24 @@ export const POSCatalog = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [addedItemEffect, setAddedItemEffect] = useState(null);
 
-  // Dynamic populated categories filter: only show categories that have products in them
+  // All distinct categories drawn directly from loaded products — no
+  // cross-filtering against customCategories to avoid silent mismatches
+  // with Amharic / mixed-language category names.
   const populatedCategories = [
     'All',
-    ...new Set(
-      (customCategories || [])
-        .concat(products.map((p) => p.category))
-        .filter((cat) => cat && products.some((product) => product.category === cat))
-    )
+    ...new Set(products.map((p) => p.category).filter(Boolean))
   ];
 
-  // Filter products
+  // Filter products — search works on raw string contents, no locale transform
+  // that could break Amharic text comparison.
   const filteredProducts = products.filter((product) => {
-    const matchesSearch =
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.category.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.trim();
+    const matchesSearch = q === '' || (
+      product.name.toLowerCase().includes(q.toLowerCase()) ||
+      product.sku.toLowerCase().includes(q.toLowerCase()) ||
+      (product.category || '').toLowerCase().includes(q.toLowerCase()) ||
+      (product.description || '').toLowerCase().includes(q.toLowerCase())
+    );
 
     const matchesCategory =
       selectedCategory === 'All' || product.category === selectedCategory;
@@ -35,8 +37,11 @@ export const POSCatalog = () => {
   const handleCardClick = (product) => {
     if (product.currentStock <= 0) return;
 
-    const added = addToCart(product);
-    if (added) {
+    const alreadyInCart = cart.some((item) => item.product.id === product.id);
+    addToCart(product); // toggles: adds if not in cart, removes if already in cart
+
+    if (!alreadyInCart) {
+      // Only flash the "added" animation on the first click (adding)
       setAddedItemEffect(product.id);
       setTimeout(() => setAddedItemEffect(null), 600);
     }
@@ -118,6 +123,7 @@ export const POSCatalog = () => {
         ) : (
           filteredProducts.map((product) => {
             const inCartQty = getItemCartQty(product.id);
+            const isInCart = inCartQty > 0;
             const isOutOfStock = product.currentStock <= 0;
             const isLowStock = product.currentStock > 0 && product.currentStock <= 5;
             const isRecentlyAdded = addedItemEffect === product.id;
@@ -127,13 +133,17 @@ export const POSCatalog = () => {
                 key={product.id}
                 className={`product-card ${isOutOfStock ? 'out-of-stock' : ''}`}
                 onClick={() => handleCardClick(product)}
+                title={isInCart ? 'Click again to remove from cart' : isOutOfStock ? 'Out of stock' : 'Click to add to cart'}
                 style={{
                   transform: isRecentlyAdded ? 'scale(0.97)' : undefined,
-                  transition: 'all 0.15s ease'
+                  transition: 'all 0.15s ease',
+                  borderColor: isInCart ? 'var(--accent-primary)' : undefined,
+                  boxShadow: isInCart ? '0 0 0 2px var(--accent-primary), var(--shadow-md)' : undefined,
+                  background: isInCart ? 'var(--bg-card-hover)' : undefined,
                 }}
               >
-                {/* Badge if in cart */}
-                {inCartQty > 0 && (
+                {/* Badge if in cart — click to remove */}
+                {isInCart && (
                   <div
                     style={{
                       position: 'absolute',
@@ -153,7 +163,7 @@ export const POSCatalog = () => {
                     }}
                   >
                     <ShoppingBag size={11} />
-                    <span>{inCartQty} in cart</span>
+                    <span>Tap to remove</span>
                   </div>
                 )}
 
@@ -171,7 +181,7 @@ export const POSCatalog = () => {
                       isOutOfStock
                         ? 'no-stock'
                         : isLowStock
-                        ? 'low-stock'
+                        ? 'low-stock red-alert'
                         : 'in-stock'
                     }`}
                   >
@@ -212,7 +222,7 @@ export const POSCatalog = () => {
                   )}
                 </div>
 
-                {/* Product Details - Strictly display product.name */}
+                {/* Product Details */}
                 <div className="product-info" style={{ padding: '0.75rem 0.25rem 0.25rem', textAlign: 'center' }}>
                   <h3 className="product-name" style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>
                     {product.name}

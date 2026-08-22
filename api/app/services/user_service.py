@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import UserCreate, LoginRequest
+from app.schemas.user import UserCreate, UserUpdate, LoginRequest
 from app.models.user import User, UserRole
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.exceptions import EntityNotFoundException, DuplicateEntityException, BusinessValidationException
@@ -8,6 +8,9 @@ from app.core.exceptions import EntityNotFoundException, DuplicateEntityExceptio
 class UserService:
     def __init__(self, db: Session):
         self.repository = UserRepository(db)
+
+    def list_users(self) -> list[User]:
+        return self.repository.list_all()
 
     def create_user(self, user_in: UserCreate) -> User:
         if self.repository.get_by_username(user_in.username.strip()):
@@ -23,10 +26,28 @@ class UserService:
 
         return self.repository.create(user_data)
 
+    def update_user(self, user_id: int, user_in: UserUpdate) -> User:
+        user = self.get_user_by_id(user_id)
+
+        update_data = user_in.model_dump(exclude_unset=True)
+
+        if "username" in update_data and update_data["username"]:
+            clean_username = update_data["username"].strip()
+            existing = self.repository.get_by_username(clean_username)
+            if existing and existing.id != user_id:
+                raise DuplicateEntityException(f"Username '{clean_username}' is already taken.")
+            update_data["username"] = clean_username
+
+        if "password" in update_data and update_data["password"]:
+            update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+        else:
+            update_data.pop("password", None)
+
+        return self.repository.update(user, update_data)
+
     def authenticate(self, login_in: LoginRequest) -> tuple[User, str]:
         user = self.repository.get_by_username(login_in.username.strip())
         if not user:
-            # Check by email as fallback
             user = self.repository.get_by_email(login_in.username.strip())
 
         if not user or not verify_password(login_in.password, user.hashed_password):
