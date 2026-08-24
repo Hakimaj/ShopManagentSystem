@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
 import { useAuth } from '../context/AuthContext';
+import { UserManager } from './UserManager';
 import {
   ShoppingBag,
   Package,
@@ -11,12 +12,14 @@ import {
   Moon,
   ShieldCheck,
   UserCircle,
-  LogOut
+  LogOut,
+  Settings
 } from 'lucide-react';
 
 export const Navbar = () => {
   const { activeTab, setActiveTab, theme, toggleTheme, cart } = useShop();
   const { currentUser, isAuthenticated, logout } = useAuth();
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   const isAdmin = currentUser?.role === 'ADMIN';
   const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -28,8 +31,7 @@ export const Navbar = () => {
     { id: 'inventory', icon: <Package size={20} />,     label: 'Inventory',       badge: null },
     { id: 'dashboard', icon: <TrendingUp size={20} />,  label: 'Sales & Revenue', badge: null },
     { id: 'expenses',  icon: <Receipt size={20} />,     label: 'Expenses',        badge: null },
-    // Users tab — Admin only
-    ...(isAdmin ? [{ id: 'users', icon: <Users size={20} />, label: 'Users', badge: null }] : []),
+    // Remove Users tab from main nav - moved to settings modal
   ];
 
   return (
@@ -113,6 +115,17 @@ export const Navbar = () => {
             </div>
           )}
 
+          {/* Settings button — Admin only */}
+          {isAdmin && (
+            <button
+              className="icon-btn"
+              onClick={() => setIsSettingsModalOpen(true)}
+              title="Settings & User Management"
+            >
+              <Settings size={18} />
+            </button>
+          )}
+
           {/* Theme toggle */}
           <button
             className="icon-btn"
@@ -166,6 +179,27 @@ export const Navbar = () => {
           </button>
         ))}
       </nav>
+
+      {/* Settings Modal for User Management */}
+      {isSettingsModalOpen && isAdmin && (
+        <div className="modal-overlay" onClick={() => setIsSettingsModalOpen(false)}>
+          <div className="modal-card" style={{ maxWidth: '900px', width: '90vw' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">Settings & User Management</div>
+              <button
+                className="icon-btn"
+                onClick={() => setIsSettingsModalOpen(false)}
+                style={{ border: 'none', background: 'transparent' }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+              <UserManager />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

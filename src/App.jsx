@@ -125,9 +125,7 @@ const AppContent = () => {
           isAuthenticated ? <ExpensesManager /> : null
         )}
 
-        {activeTab === 'users' && (
-          isAuthenticated && currentUser?.role === 'ADMIN' ? <UserManager /> : null
-        )}
+        {/* Users management has been moved to Settings modal in Navbar */}
       </main>
 
       <TransactionModal />

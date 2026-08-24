@@ -23,3 +23,4 @@ class Product(Base):
 
     # Relationships
     category: Mapped["Category"] = relationship("Category", back_populates="products")
+    stock_movements: Mapped[list["StockMovement"]] = relationship("StockMovement", back_populates="product", cascade="all, delete-orphan")

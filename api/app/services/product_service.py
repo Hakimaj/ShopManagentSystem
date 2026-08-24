@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from app.repositories.product_repository import ProductRepository
 from app.repositories.category_repository import CategoryRepository
+from app.services.stock_movement_service import StockMovementService
 from app.schemas.product import ProductCreate, ProductUpdate
 from app.models.product import Product
 from app.core.exceptions import EntityNotFoundException, DuplicateEntityException, BusinessValidationException
@@ -10,6 +11,7 @@ class ProductService:
         self.db = db
         self.repository = ProductRepository(db)
         self.category_repository = CategoryRepository(db)
+        self.stock_movement_service = StockMovementService(db)
 
     def get_product_by_id(self, product_id: int) -> Product:
         product = self.repository.get_by_id(product_id)
@@ -63,7 +65,18 @@ class ProductService:
         data = product_in.model_dump()
         data["sku"] = clean_sku
         data["name"] = product_in.name.strip()
-        return self.repository.create(data)
+        product = self.repository.create(data)
+        
+        # Record initial stock IN movement if there's initial stock
+        if product.current_stock > 0:
+            self.stock_movement_service.record_stock_in(
+                product_id=product.id,
+                quantity=product.current_stock,
+                reference_type="INITIAL",
+                notes=f"Initial stock for new product: {product.name}"
+            )
+            
+        return product
 
     def update_product(self, product_id: int, product_in: ProductUpdate) -> Product:
         product = self.get_product_by_id(product_id)
@@ -93,8 +106,38 @@ class ProductService:
         if new_stock < 0:
             raise BusinessValidationException("Stock level cannot be negative.")
         product = self.get_product_by_id(product_id)
-        return self.repository.update_stock(product, new_stock)
+        
+        old_stock = product.current_stock
+        stock_difference = new_stock - old_stock
+        
+        # Update stock
+        updated_product = self.repository.update_stock(product, new_stock)
+        
+        # Record stock movement if there's a change
+        if stock_difference != 0:
+            if stock_difference > 0:
+                # Stock increased - record IN movement
+                self.stock_movement_service.record_stock_in(
+                    product_id=product_id,
+                    quantity=stock_difference,
+                    reference_type="ADJUSTMENT",
+                    notes=f"Stock adjustment: {old_stock} → {new_stock}"
+                )
+            else:
+                # Stock decreased - record OUT movement
+                self.stock_movement_service.record_stock_out(
+                    product_id=product_id,
+                    quantity=abs(stock_difference),
+                    reference_type="ADJUSTMENT",
+                    notes=f"Stock adjustment: {old_stock} → {new_stock}"
+                )
+        
+        return updated_product
 
     def deactivate_product(self, product_id: int) -> Product:
         product = self.get_product_by_id(product_id)
         return self.repository.soft_delete(product)
+
+    def get_global_stats(self) -> dict:
+        """Get global inventory statistics (not limited by pagination)"""
+        return self.repository.get_global_stats()

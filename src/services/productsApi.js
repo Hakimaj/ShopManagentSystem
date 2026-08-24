@@ -13,6 +13,10 @@ export const productsApi = {
     return apiRequest(`/products${queryString}`);
   },
 
+  getGlobalStats: async () => {
+    return apiRequest('/products/stats');
+  },
+
   get: async (id) => {
     return apiRequest(`/products/${id}`);
   },

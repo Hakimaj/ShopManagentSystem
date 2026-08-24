@@ -4,6 +4,7 @@ from app.models.product import Product
 from app.models.user import User, UserRole
 from app.models.transaction import Transaction, TransactionItem
 from app.models.expense import ExpenseCategory, Expense
+from app.models.stock_movement import StockMovement, MovementType
 
 __all__ = [
     "Base",
@@ -15,4 +16,6 @@ __all__ = [
     "TransactionItem",
     "ExpenseCategory",
     "Expense",
+    "StockMovement",
+    "MovementType",
 ]

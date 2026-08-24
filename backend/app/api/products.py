@@ -6,7 +6,8 @@ from app.schemas.product import (
     ProductUpdate,
     ProductResponse,
     ProductListResponse,
-    PaginationMeta
+    PaginationMeta,
+    ProductGlobalStats
 )
 from app.schemas.transaction import StockAdjustmentRequest
 from app.services.product_service import ProductService
@@ -36,6 +37,16 @@ def list_products(
         items=[ProductResponse.model_validate(p) for p in items],
         meta=PaginationMeta(total=total, page=page, size=size, pages=pages)
     )
+
+@router.get("/stats", response_model=ProductGlobalStats)
+def get_product_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_staff_or_admin)
+):
+    """Get global inventory statistics (not limited by pagination)"""
+    service = ProductService(db)
+    stats = service.get_global_stats()
+    return ProductGlobalStats.model_validate(stats)
 
 @router.get("/{product_id}", response_model=ProductResponse)
 def get_product(product_id: int, db: Session = Depends(get_db)):

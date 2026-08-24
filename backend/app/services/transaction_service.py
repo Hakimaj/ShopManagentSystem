@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from app.repositories.transaction_repository import TransactionRepository
 from app.repositories.product_repository import ProductRepository
+from app.services.stock_movement_service import StockMovementService
 from app.schemas.transaction import CheckoutRequest
 from app.models.transaction import Transaction
 from app.core.exceptions import EntityNotFoundException, BusinessValidationException
@@ -13,6 +14,7 @@ class TransactionService:
         self.db = db
         self.repository = TransactionRepository(db)
         self.product_repository = ProductRepository(db)
+        self.stock_movement_service = StockMovementService(db)
 
     def process_checkout(self, checkout_in: CheckoutRequest, user_id: int | None = None) -> Transaction:
         if not checkout_in.items:
@@ -73,7 +75,19 @@ class TransactionService:
 
         # 3. Save atomically and return
         try:
-            return self.repository.create(txn_data, validated_items)
+            transaction = self.repository.create(txn_data, validated_items)
+            
+            # Record stock OUT movements for each item sold
+            for item in validated_items:
+                self.stock_movement_service.record_stock_out(
+                    product_id=item["product_id"],
+                    quantity=item["quantity"],
+                    reference_type="TRANSACTION",
+                    reference_id=None,  # We could store txn_id if we convert it to int
+                    notes=f"Sale via transaction {txn_id}"
+                )
+                
+            return transaction
         except Exception as e:
             self.db.rollback()
             raise BusinessValidationException(f"Transaction failed: {str(e)}")
@@ -162,12 +176,21 @@ class TransactionService:
         if getattr(txn, "status", "COMPLETED") == "REFUNDED":
             raise BusinessValidationException("This transaction has already been refunded.")
 
-        # Restore stock for each item
+        # Restore stock for each item and record stock IN movements
         for item in txn.items:
             if item.product_id:
                 product = self.product_repository.get_by_id(item.product_id)
                 if product:
                     product.current_stock += item.quantity
+                    
+                    # Record stock IN movement for refund
+                    self.stock_movement_service.record_stock_in(
+                        product_id=item.product_id,
+                        quantity=item.quantity,
+                        reference_type="REFUND",
+                        reference_id=None,  # Could store txn_id if needed
+                        notes=f"Refund for transaction {txn_id}"
+                    )
 
         # Mark as refunded
         txn.status = "REFUNDED"

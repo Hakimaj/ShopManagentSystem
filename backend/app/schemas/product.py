@@ -45,3 +45,9 @@ class PaginationMeta(BaseModel):
 class ProductListResponse(BaseModel):
     items: list[ProductResponse]
     meta: PaginationMeta
+
+class ProductGlobalStats(BaseModel):
+    """Global inventory statistics (not limited by pagination)"""
+    total_distinct_products: int = Field(..., ge=0, description="Total number of distinct products")
+    total_stock_units: int = Field(..., ge=0, description="Total stock units across all products")
+    total_inventory_value: Decimal = Field(..., ge=0, description="Total inventory value (cost_price * stock)")

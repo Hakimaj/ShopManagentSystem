@@ -59,6 +59,7 @@ const normalizeTxn = (t) => ({
 export const ShopProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
   const [productsMeta, setProductsMeta] = useState(null);   // { total, page, size, pages }
+  const [globalStats, setGlobalStats] = useState(null);    // Global inventory stats
   const [categoriesList, setCategoriesList] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [txnMeta, setTxnMeta] = useState(null);             // { total, page, size, pages }
@@ -71,6 +72,7 @@ export const ShopProvider = ({ children }) => {
   const [apiError, setApiError] = useState(null);
   const [isLoadingMoreProducts, setIsLoadingMoreProducts] = useState(false);
   const [isLoadingMoreTxns, setIsLoadingMoreTxns] = useState(false);
+  const [currentSearchQuery, setCurrentSearchQuery] = useState('');  // Track current search
 
   // Persist theme preference (not business data)
   useEffect(() => {
@@ -81,12 +83,14 @@ export const ShopProvider = ({ children }) => {
   const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
 
   // Fetch all catalog, category, and transaction data from backend
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (searchQuery = '') => {
     setIsLoading(true);
     setApiError(null);
+    setCurrentSearchQuery(searchQuery);
     try {
-      const [prodRes, catRes, txnRes] = await Promise.allSettled([
-        productsApi.list({ size: 50, page: 1, is_active: true }),  // initial page only
+      const [prodRes, statsRes, catRes, txnRes] = await Promise.allSettled([
+        productsApi.list({ size: 50, page: 1, is_active: true, search: searchQuery }),  // initial page with search
+        productsApi.getGlobalStats(),  // Global stats
         categoriesApi.list(),
         transactionsApi.list({ size: 50, page: 1 })               // initial page only
       ]);
@@ -96,6 +100,10 @@ export const ShopProvider = ({ children }) => {
         setProductsMeta(prodRes.value.meta || null);
       } else if (prodRes.status === 'rejected') {
         throw prodRes.reason;
+      }
+
+      if (statsRes.status === 'fulfilled') {
+        setGlobalStats(statsRes.value);
       }
 
       if (catRes.status === 'fulfilled' && Array.isArray(catRes.value)) {
@@ -124,6 +132,42 @@ export const ShopProvider = ({ children }) => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // ─── Server-Side Search ───────────────────────────────────────────────────
+
+  const searchProducts = useCallback(async (searchQuery, categoryFilter = 'All') => {
+    setIsLoading(true);
+    setApiError(null);
+    setCurrentSearchQuery(searchQuery);
+    try {
+      const params = {
+        size: 50,
+        page: 1,
+        is_active: true,
+        search: searchQuery || undefined
+      };
+      
+      // Add category filter if not 'All'
+      if (categoryFilter !== 'All') {
+        const category = categoriesList.find(c => c.name === categoryFilter);
+        if (category) {
+          params.category_id = category.id;
+        }
+      }
+
+      const res = await productsApi.list(params);
+      if (res?.items) {
+        setProducts(res.items.map(normalizeProduct));
+        setProductsMeta(res.meta || null);
+      }
+    } catch (err) {
+      if (err.status !== 401) {
+        setApiError(err.message || 'Search failed');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [categoriesList]);
 
   // ─── Cart Operations ───────────────────────────────────────────────────────
 
@@ -194,8 +238,13 @@ export const ShopProvider = ({ children }) => {
       setCart([]);
       setIsTxnModalOpen(true);
 
-      // Refresh products to reflect updated stock (first page only — pagination preserved)
-      const prodRes = await productsApi.list({ size: 50, page: 1, is_active: true });
+      // Refresh products to reflect updated stock (preserve search and pagination)
+      const prodRes = await productsApi.list({ 
+        size: 50, 
+        page: 1, 
+        is_active: true, 
+        search: currentSearchQuery || undefined 
+      });
       if (prodRes?.items) {
         setProducts(prodRes.items.map(normalizeProduct));
         setProductsMeta(prodRes.meta || null);
@@ -309,7 +358,14 @@ export const ShopProvider = ({ children }) => {
     setIsLoadingMoreProducts(true);
     try {
       const nextPage = productsMeta.page + 1;
-      const res = await productsApi.list({ size: productsMeta.size, page: nextPage, is_active: true });
+      const params = { 
+        size: productsMeta.size, 
+        page: nextPage, 
+        is_active: true,
+        search: currentSearchQuery || undefined  // Preserve current search
+      };
+      
+      const res = await productsApi.list(params);
       if (res?.items) {
         setProducts((prev) => {
           // Deduplicate by id
@@ -358,6 +414,7 @@ export const ShopProvider = ({ children }) => {
       value={{
         products,
         productsMeta,
+        globalStats,
         categoriesList,
         customCategories,
         transactions,
@@ -380,6 +437,7 @@ export const ShopProvider = ({ children }) => {
         addCategory,
         deleteCategory,
         loadData,
+        searchProducts,
         loadMoreProducts,
         loadMoreTransactions,
         isLoadingMoreProducts,
@@ -388,7 +446,8 @@ export const ShopProvider = ({ children }) => {
         isTxnModalOpen,
         setIsTxnModalOpen,
         isLoading,
-        apiError
+        apiError,
+        currentSearchQuery
       }}
     >
       {children}

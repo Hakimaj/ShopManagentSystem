@@ -100,3 +100,19 @@ class ProductRepository(BaseRepository):
         self.db.commit()
         self.db.refresh(product)
         return product
+
+    def get_global_stats(self) -> dict:
+        """Get global inventory statistics across all products"""
+        stmt = select(
+            func.count(Product.id).label('total_distinct_products'),
+            func.coalesce(func.sum(Product.current_stock), 0).label('total_stock_units'),
+            func.coalesce(func.sum(Product.current_stock * Product.cost_price), 0).label('total_inventory_value')
+        ).where(Product.is_active == True)
+        
+        result = self.db.execute(stmt).one()
+        
+        return {
+            'total_distinct_products': int(result.total_distinct_products),
+            'total_stock_units': int(result.total_stock_units),
+            'total_inventory_value': float(result.total_inventory_value)
+        }

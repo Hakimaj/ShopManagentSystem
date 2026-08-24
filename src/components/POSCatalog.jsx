@@ -4,35 +4,40 @@ import { Search, AlertTriangle, Layers, ShoppingBag, PackageX } from 'lucide-rea
 import { ErrorBanner } from './ErrorBanner';
 
 export const POSCatalog = () => {
-  const { products, addToCart, cart, customCategories, isLoading, apiError, loadData } = useShop();
+  const { products, addToCart, cart, customCategories, searchProducts, isLoading, apiError, loadData } = useShop();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [addedItemEffect, setAddedItemEffect] = useState(null);
+  const [searchTimeout, setSearchTimeout] = useState(null);
 
-  // All distinct categories drawn directly from loaded products — no
-  // cross-filtering against customCategories to avoid silent mismatches
-  // with Amharic / mixed-language category names.
-  const populatedCategories = [
-    'All',
-    ...new Set(products.map((p) => p.category).filter(Boolean))
-  ];
+  // All distinct categories from custom categories list
+  const populatedCategories = ['All', ...customCategories];
 
-  // Filter products — search works on raw string contents, no locale transform
-  // that could break Amharic text comparison.
-  const filteredProducts = products.filter((product) => {
-    const q = searchQuery.trim();
-    const matchesSearch = q === '' || (
-      product.name.toLowerCase().includes(q.toLowerCase()) ||
-      product.sku.toLowerCase().includes(q.toLowerCase()) ||
-      (product.category || '').toLowerCase().includes(q.toLowerCase()) ||
-      (product.description || '').toLowerCase().includes(q.toLowerCase())
-    );
+  // Handle server-side search with debouncing
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    
+    // Clear existing timeout
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+    
+    // Set new timeout for search
+    const timeout = setTimeout(() => {
+      searchProducts(query.trim(), selectedCategory);
+    }, 500); // 500ms debounce
+    
+    setSearchTimeout(timeout);
+  };
 
-    const matchesCategory =
-      selectedCategory === 'All' || product.category === selectedCategory;
+  // Handle category filter change
+  const handleCategoryChange = (category) => {
+    setSelectedCategory(category);
+    searchProducts(searchQuery.trim(), category);
+  };
 
-    return matchesSearch && matchesCategory;
-  });
+  // Since we're using server-side search, products array already contains filtered results
+  const filteredProducts = products;
 
   const handleCardClick = (product) => {
     if (product.currentStock <= 0) return;
@@ -68,7 +73,7 @@ export const POSCatalog = () => {
             <button
               key={cat}
               className={`pill-btn ${selectedCategory === cat ? 'active' : ''}`}
-              onClick={() => setSelectedCategory(cat)}
+              onClick={() => handleCategoryChange(cat)}
             >
               {cat}
             </button>
@@ -82,7 +87,7 @@ export const POSCatalog = () => {
             className="search-input"
             placeholder="Search products by name, SKU, or category..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearch(e.target.value)}
           />
         </div>
       </div>

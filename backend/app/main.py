@@ -15,7 +15,7 @@ from app.core.exceptions import (
     BusinessValidationException
 )
 from app.db.init_db import init_db
-from app.api import endpoints, auth, categories, products, transactions, dashboard, uploads, expenses, users
+from app.api import endpoints, auth, categories, products, transactions, dashboard, uploads, expenses, users, inventory, stock_movements
 
 # Setup application logging
 setup_logging()
@@ -101,6 +101,8 @@ app.include_router(endpoints.router, prefix=settings.API_STR)
 app.include_router(auth.router, prefix=settings.API_STR)
 app.include_router(categories.router, prefix=settings.API_STR)
 app.include_router(products.router, prefix=settings.API_STR)
+app.include_router(inventory.router, prefix=settings.API_STR)
+app.include_router(stock_movements.router, prefix=settings.API_STR)
 app.include_router(transactions.router, prefix=settings.API_STR)
 app.include_router(dashboard.router, prefix=settings.API_STR)
 app.include_router(uploads.router, prefix=settings.API_STR)
@@ -112,6 +114,8 @@ app.include_router(endpoints.router)
 app.include_router(auth.router)
 app.include_router(categories.router)
 app.include_router(products.router)
+app.include_router(inventory.router)
+app.include_router(stock_movements.router)
 app.include_router(transactions.router)
 app.include_router(dashboard.router)
 app.include_router(uploads.router)
